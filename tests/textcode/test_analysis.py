@@ -1,5 +1,7 @@
+# -*- coding: utf-8 -*-
+
 #
-# Copyright (c) 2016-2018 nexB Inc. and others. All rights reserved.
+# Copyright (c) nexB Inc. and others. All rights reserved.
 # http://nexb.com and https://github.com/nexB/scancode-toolkit/
 # The ScanCode software is licensed under the Apache License version 2.0.
 # Data generated with ScanCode require an acknowledgment.
@@ -32,14 +34,23 @@ import os.path
 
 from commoncode.testcase import FileBasedTesting
 
+from commoncode import compat
+from commoncode.fileutils import resource_iter
+from commoncode.system import py2
+from commoncode.system import py3
+
+from textcode.analysis import as_unicode
 from textcode.analysis import unicode_text_lines
 from textcode.analysis import numbered_text_lines
-from commoncode.fileutils import resource_iter
 
 
 def check_text_lines(result, expected_file, regen=False):
         if regen:
-            with open(expected_file, 'wb') as tf:
+            if py2:
+                mode = 'wb'
+            if py3:
+                mode = 'w'
+            with open(expected_file, mode) as tf:
                 json.dump(result, tf, indent=2)
         with open(expected_file, 'rb') as tf:
             expected = json.load(tf)
@@ -88,7 +99,7 @@ class TestAnalysis(FileBasedTesting):
         test_file = self.get_test_loc('analysis/splinefonts/Ambrosia.sfd')
         result = list(l for _, l in numbered_text_lines(test_file))
         expected_file = test_file + '.expected'
-        expected = open(expected_file, 'rb').read().splitlines(True)
+        expected = open(expected_file, 'r').read().splitlines(True)
         assert expected == list(result)
 
     def test_numbered_text_lines_handles_jsmap1(self):
@@ -134,3 +145,31 @@ class TestAnalysis(FileBasedTesting):
         ]
         assert expected == result
         assert 2 == len(result)
+
+    def test_as_unicode_converts_bytes_to_unicode(self):
+        test_line = '    // as defined in https://tools.ietf.org/html/rfc2821#section-4.1.2.'.encode()
+        result = as_unicode(test_line)
+        assert type(result) == compat.unicode
+
+    def test_numbered_text_lines_return_unicode(self):
+        test_file = self.get_test_loc('analysis/verify.go')
+        for _lineno, line in numbered_text_lines(test_file):
+            assert type(line) == compat.unicode
+
+    def test_unicode_text_lines_replaces_null_bytes_with_space(self):
+        test_file = self.get_test_loc('analysis/text-with-trailing-null-bytes.txt')
+        result = list(unicode_text_lines(test_file))
+        expected_file = self.get_test_loc('analysis/text-with-trailing-null-bytes.txt.expected')
+        check_text_lines(result, expected_file, regen=False)
+
+    def test_as_unicode_from_bytes_replaces_null_bytes_with_space(self):
+        test = b'\x00is designed to give them, \x00BEFORE the\x00\x00\x00\x00\x00\x00'
+        result = as_unicode(test)
+        expected = ' is designed to give them,  BEFORE the      '
+        assert expected == result
+
+    def test_as_unicode_from_unicode_replaces_null_bytes_with_space(self):
+        test = '\x00is designed to give them, \x00BEFORE the\x00\x00\x00\x00\x00\x00'
+        result = as_unicode(test)
+        expected = ' is designed to give them,  BEFORE the      '
+        assert expected == result

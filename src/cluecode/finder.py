@@ -24,25 +24,34 @@
 
 from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import unicode_literals
 
 import string
 import re
 
 import ipaddress
-import url as urlpy
+from six import string_types
+import urlpy
 
+from commoncode import compat
+from commoncode.system import py3
+from commoncode.text import toascii
 from cluecode import finder_data
 from textcode import analysis
 
+
 # Tracing flags
 TRACE = False
+TRACE_URL = False
+TRACE_EMAIL = False
 
 
 def logger_debug(*args):
     pass
 
 
-if TRACE:
+if TRACE or TRACE_URL or TRACE_EMAIL:
+
     import logging
     import sys
     logger = logging.getLogger(__name__)
@@ -51,7 +60,8 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, basestring) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
+
 
 """
 Find patterns in text lines such as a emails and URLs.
@@ -62,7 +72,7 @@ Optionally apply filters to pattern matches.
 def find(location, patterns):
     """
     Yield match and matched lines for patterns found in file at location as a
-    tuple of (key, found text, text line). Pattern is list of tuples (key,
+    tuple of (key, found text, text line). `patterns` is a list of tuples (key,
     compiled regex).
 
     Note: the location can be a list of lines for testing convenience.
@@ -72,14 +82,14 @@ def find(location, patterns):
         loc = pformat(location)
         logger_debug('find(location=%(loc)r,\n  patterns=%(patterns)r)' % locals())
 
-    for lineno, line in analysis.numbered_text_lines(location):
+    for lineno, line in analysis.numbered_text_lines(location, demarkup=False):
         for key, pattern in patterns:
             for match in pattern.findall(line):
 
                 if TRACE:
                     logger_debug('find: yielding match: key=%(key)r, '
                           'match=%(match)r,\n    line=%(line)r' % locals())
-                yield key, unicode(match), line, lineno
+                yield key, toascii(match), line, lineno
 
 
 def unique_filter(matches):
@@ -133,7 +143,7 @@ def build_regex_filter(pattern):
 
 
 def emails_regex():
-    return re.compile(r'\b[A-Z0-9._%-]+@[A-Z0-9.-]+\.[A-Z]{2,4}\b', re.IGNORECASE)
+    return re.compile('\\b[A-Z0-9._%-]+@[A-Z0-9.-]+\\.[A-Z]{2,4}\\b', re.IGNORECASE)
 
 
 def find_emails(location, unique=True):
@@ -144,7 +154,12 @@ def find_emails(location, unique=True):
     patterns = [('emails', emails_regex(),)]
     matches = find(location, patterns)
 
-    filters = (junk_email_domains_filter,)
+    if TRACE_EMAIL:
+        matches = list(matches)
+        for r in matches:
+            logger_debug('find_emails: match:', r)
+
+    filters = (junk_email_domains_filter, uninteresting_emails_filter)
     if unique:
         filters += (unique_filter,)
     matches = apply_filters(matches, *filters)
@@ -180,22 +195,22 @@ def uninteresting_emails_filter(matches):
 # TODO: consider: http://blog.codinghorror.com/the-problem-with-urls/
 
 
-schemes = 'https?|ftps?|sftp|rsync|ssh|svn|git|hg|https?\+git|https?\+svn|https?\+hg'
-url_body = '[^\s<>\[\]"]'
+schemes = 'https?|ftps?|sftp|rsync|ssh|svn|git|hg|https?\\+git|https?\\+svn|https?\\+hg'
+url_body = '[^\\s<>\\[\\]"]'
 
 
 def urls_regex():
     # no space, no < >, no [ ] and no double quote
-    return re.compile(r'''
+    return re.compile('''
         (
             # URLs with schemes
             (?:%(schemes)s)://%(url_body)s+
         |
             # common URLs prefix without schemes
-            (?:www|ftp)\.%(url_body)s+
+            (?:www|ftp)\\.%(url_body)s+
         |
             # git style git@github.com:christophercantu/pipeline.git
-            git\@%(url_body)s+:%(url_body)s+\.git
+            git\\@%(url_body)s+:%(url_body)s+\\.git
 
         )''' % globals()
     , re.UNICODE | re.VERBOSE | re.IGNORECASE)
@@ -233,7 +248,10 @@ def find_urls(location, unique=True):
 
     matches = apply_filters(matches, *filters)
     for _key, url, _line, lineno in matches:
-        yield unicode(url), lineno
+        if TRACE_URL:
+            logger_debug('find_urls: lineno:', lineno, '_line:', repr(_line),
+                         'type(url):', type(url), 'url:', repr(url))
+        yield compat.unicode(url), lineno
 
 
 EMPTY_URLS = set(['https', 'http', 'ftp', 'www', ])
@@ -261,8 +279,8 @@ def verbatim_crlf_url_cleaner(matches):
     # FIXME: when is this possible and could happen?
     for key, url, line, lineno in matches:
         if not url.endswith('/'):
-            url = url.replace(r'\n', '')
-            url = url.replace(r'\r', '')
+            url = url.replace('\n', '')
+            url = url.replace('\r', '')
         yield key, url, line, lineno
 
 
@@ -316,7 +334,7 @@ def add_fake_scheme(url):
     Add a fake http:// scheme to URL if has none.
     """
     if not has_scheme(url):
-        url = u'http://' + url.lstrip(u':/').strip()
+        url = 'http://' + url.lstrip(':/').strip()
     return url
 
 
@@ -324,7 +342,7 @@ def has_scheme(url):
     """
     Return True if url has a scheme.
     """
-    return re.match('^(?:%(schemes)s)://.*' % globals(), url)
+    return re.match('^(?:%(schemes)s)://.*' % globals(), url, re.UNICODE)
 
 
 def user_pass_cleaning_filter(matches):
@@ -346,6 +364,12 @@ def user_pass_cleaning_filter(matches):
         yield key, match, line, lineno
 
 
+DEFAULT_PORTS = {
+    'http': 80,
+    'https': 443
+}
+
+
 def canonical_url(uri):
     """
     Return the canonical representation of a given URI.
@@ -360,21 +384,25 @@ def canonical_url(uri):
         parsed = urlpy.parse(uri)
         if not parsed:
             return
-        if not (getattr(parsed, '_scheme', None) and getattr(parsed, '_host', None)):
-            return
+        if TRACE:
+            logger_debug('canonical_url: parsed:', parsed)
 
-        if TRACE: logger_debug('canonical_url: parsed:', parsed)
         sanitized = parsed.sanitize()
+
         if TRACE:
             logger_debug('canonical_url: sanitized:', sanitized)
 
         punycoded = sanitized.punycode()
+
         if TRACE:
             logger_debug('canonical_url: punycoded:', punycoded)
 
-        if punycoded._port == urlpy.PORTS.get(punycoded._scheme, None):
-            punycoded._port = None
-        return punycoded.utf8()
+        deport = punycoded.remove_default_port()
+
+        if TRACE:
+            logger_debug('canonical_url: deport:', deport)
+
+        return str(sanitized)
     except Exception as e:
         if TRACE:
             logger_debug('canonical_url: failed for:', uri, 'with:', repr(e))
@@ -398,17 +426,17 @@ def canonical_url_cleaner(matches):
             yield key, match , line, lineno
 
 
-IP_V4_RE = r'^(\d{1,3}\.){0,3}\d{1,3}$'
+IP_V4_RE = '^(\\d{1,3}\\.){0,3}\\d{1,3}$'
 
 
 def is_ip_v4(s):
-    return re.compile(IP_V4_RE).match(s)
+    return re.compile(IP_V4_RE, re.UNICODE).match(s)
 
 
 IP_V6_RE = (
-    r'^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$'
+    '^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$'
     '|'
-    r'^([0-9a-f]{0,4}:){2,6}(\d{1,3}\.){0,3}\d{1,3}$'
+    '^([0-9a-f]{0,4}:){2,6}(\\d{1,3}\\.){0,3}\\d{1,3}$'
 )
 
 
@@ -416,7 +444,7 @@ def is_ip_v6(s):
     """
     Return True is string s is an IP V6 address
     """
-    return re.compile(IP_V6_RE).match(s)
+    return re.compile(IP_V6_RE, re.UNICODE).match(s)
 
 
 def is_ip(s):
@@ -434,7 +462,7 @@ def get_ip(s):
         return False
 
     try:
-        ip = ipaddress.ip_address(unicode(s))
+        ip = ipaddress.ip_address(compat.unicode(s))
         return ip
     except ValueError:
         return False
@@ -497,12 +525,11 @@ def url_host_domain(url):
     """
     try:
         parsed = urlpy.parse(url)
-        host = parsed._host
+        host = parsed.host
         if not host:
             return None, None
-        host = host.lower()
-        domain = parsed.pld().lower()
-        return host, domain
+        domain = parsed.pld
+        return host.lower(), domain.lower()
     except Exception as e:
         if TRACE:
             logger_debug('url_host_domain: failed for:', url, 'with:', repr(e))

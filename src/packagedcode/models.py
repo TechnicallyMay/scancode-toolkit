@@ -31,10 +31,11 @@ import logging
 import sys
 
 import attr
-from attr.validators import in_ as choices
 from packageurl import normalize_qualifiers
 from packageurl import PackageURL
+from six import string_types
 
+from commoncode.datautils import choices
 from commoncode.datautils import Boolean
 from commoncode.datautils import Date
 from commoncode.datautils import Integer
@@ -42,18 +43,6 @@ from commoncode.datautils import List
 from commoncode.datautils import Mapping
 from commoncode.datautils import String
 from commoncode.datautils import TriBoolean
-
-
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str_orig = str
-    bytes = str  # NOQA
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 
 """
@@ -99,8 +88,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, (bytes, str)) and a or repr(a) for a in args))
-
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 
 class BaseModel(object):
@@ -117,7 +105,7 @@ class BaseModel(object):
     @classmethod
     def create(cls, ignore_unknown=True, **kwargs):
         """
-        Return a object built from kwargs.
+        Return an object built from kwargs.
         Optionally `ignore_unknown` attributes provided in `kwargs`.
         """
         if ignore_unknown:
@@ -235,6 +223,7 @@ class BasePackage(BaseModel):
     qualifiers = Mapping(
         default=None,
         value_type=str,
+        converter=lambda v: normalize_qualifiers(v, encode=False),
         label='package qualifiers',
         help='Optional mapping of key=value pairs qualifiers for this package')
 
@@ -252,6 +241,8 @@ class BasePackage(BaseModel):
         """
         Return a compact purl package URL string.
         """
+        if not self.name:
+            return
         return PackageURL(
             self.type, self.namespace, self.name, self.version,
             self.qualifiers, self.subpath).to_string()
@@ -305,14 +296,13 @@ class BasePackage(BaseModel):
         Return an OrderedDict of primitive Python types.
         """
         mapping = attr.asdict(self, dict_factory=OrderedDict)
-        if self.qualifiers:
-            mapping['qualifiers'] = normalize_qualifiers(self.qualifiers, encode=True)
-
         if not kwargs.get('exclude_properties'):
             mapping['purl'] = self.purl
             mapping['repository_homepage_url'] = self.repository_homepage_url()
             mapping['repository_download_url'] = self.repository_download_url()
             mapping['api_data_url'] = self.api_data_url()
+        if self.qualifiers:
+            mapping['qualifiers'] = normalize_qualifiers(self.qualifiers, encode=False)
         return mapping
 
     @classmethod
@@ -335,7 +325,8 @@ class DependentPackage(BaseModel):
     purl = String(
         repr=True,
         label='Dependent package URL',
-        help='A compact purl package URL')
+        help='A compact purl package URL. Typically when there is an unresolved requirement, there is no version. '
+             'If the dependency is resolved, the version should be added to the purl')
 
     requirement = String(
         repr=True,
@@ -459,10 +450,10 @@ class Package(BasePackage):
         label='notice text',
         help='A notice text for this package.')
 
-    manifest_path = String(
-        label='manifest path',
-        help='A relative path to the manifest file if any, such as a '
-             'Maven .pom or a npm package.json.')
+    root_path = String(
+        label='package root path',
+        help='The path to the root of the package documented in this manifest '
+             'if any, such as a Maven .pom or a npm package.json parent directory.')
 
     dependencies = List(
         item_type=DependentPackage,
@@ -481,6 +472,10 @@ class Package(BasePackage):
              'this package. For instance an SRPM is the "source package" for a '
              'binary RPM.')
 
+    extra_data = Mapping(
+        label='extra data',
+        help='A Mapping where arbitrary data that is related to the Package can be stored ')
+
     def __attrs_post_init__(self, *args, **kwargs):
         if not self.type and hasattr(self, 'default_type'):
             self.type = self.default_type
@@ -491,7 +486,7 @@ class Package(BasePackage):
     @classmethod
     def recognize(cls, location):
         """
-        Return a Package object or None given a file location pointing to a
+        Yield one or more Package objects given a file location pointing to a
         package archive, manifest or similar.
 
         Sub-classes should override to implement their own package recognition.
@@ -512,10 +507,32 @@ class Package(BasePackage):
         of a "xyz.pom" file found inside a JAR META-INF/ directory, the root is
         the JAR itself which may not be the direct parent
 
-        Each package type should subclass as needed. This deafult to return the
+        Each package type should subclass as needed. This default to return the
         same path.
         """
         return manifest_resource
+
+    @classmethod
+    def get_package_resources(cls, package_root, codebase):
+        """
+        Yield the Resources of a Package starting from `package_root`
+        """
+        if not Package.is_ignored_package_resource(package_root, codebase):
+            yield package_root
+        for resource in package_root.walk(codebase, topdown=True, ignored=Package.is_ignored_package_resource):
+            yield resource
+
+    @classmethod
+    def ignore_resource(cls, resource, codebase):
+        """
+        Return True if `resource` should be ignored.
+        """
+        return False
+
+    @staticmethod
+    def is_ignored_package_resource(resource, codebase):
+        from packagedcode import PACKAGE_TYPES
+        return any(pt.ignore_resource(resource, codebase) for pt in PACKAGE_TYPES)
 
     def compute_normalized_license(self):
         """
@@ -581,18 +598,41 @@ def compute_normalized_license(declared_license):
         return 'unknown'
 
 
+@attr.s()
+class PackageFile(BaseModel):
+    """
+    A file that belongs to a package.
+    """
+
+    path = String(
+        label='Path of this installed file',
+        help='The path of this installed file either relative to a rootfs '
+            '(typical for system packages) or a path in this scan (typical for '
+             'application packages).',
+        repr=True,
+    )
+
+    sha1 = String(
+        label='SHA1 checksum',
+        help='SHA1 checksum for this file in hexadecimal')
+
+    md5 = String(
+        label='MD5 checksum',
+        help='MD5 checksum for this file in hexadecimal')
+
+    sha256 = String(
+        label='SHA256 checksum',
+        help='SHA256 checksum for this file in hexadecimal')
+
+    sha512 = String(
+        label='SHA512 checksum',
+        help='SHA512 checksum for this file in hexadecimal')
+
+
 # Package types
 # NOTE: this is somewhat redundant with extractcode archive handlers
 # yet the purpose and semantics are rather different here
 
-
-@attr.s()
-class DebianPackage(Package):
-    metafiles = ('*.control',)
-    extensions = ('.deb',)
-    filetypes = ('debian binary package',)
-    mimetypes = ('application/x-archive', 'application/vnd.debian.binary-package',)
-    default_type = 'deb'
 
 
 @attr.s()
@@ -652,7 +692,7 @@ class IvyJar(JavaJar):
     default_type = 'ivy'
     default_primary_language = 'Java'
 
-
+# FIXME: move to bower.py
 @attr.s()
 class BowerPackage(Package):
     metafiles = ('bower.json',)
@@ -705,6 +745,7 @@ class Godep(Package):
         return manifest_resource.parent(codebase)
 
 
+# TODO: enable me
 # @attr.s()
 # class AlpinePackage(Package):
 #     metafiles = ('*.control',)

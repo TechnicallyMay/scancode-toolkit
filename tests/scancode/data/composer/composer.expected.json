@@ -25,7 +25,7 @@
           "namespace": "laravel",
           "name": "laravel",
           "version": null,
-          "qualifiers": null,
+          "qualifiers": {},
           "subpath": null,
           "primary_language": "PHP",
           "description": null,
@@ -54,7 +54,7 @@
           "license_expression": "mit",
           "declared_license": "MIT",
           "notice_text": null,
-          "manifest_path": null,
+          "root_path": null,
           "dependencies": [
             {
               "purl": "pkg:composer/php",
@@ -123,6 +123,7 @@
           ],
           "contains_source_code": null,
           "source_packages": [],
+          "extra_data": {},
           "purl": "pkg:composer/laravel/laravel",
           "repository_homepage_url": "https://packagist.org/packages/laravel/laravel",
           "repository_download_url": null,

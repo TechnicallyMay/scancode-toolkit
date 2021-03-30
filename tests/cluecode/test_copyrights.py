@@ -27,24 +27,20 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from commoncode.testcase import FileBasedTesting
+import pytest
+
 from cluecode_test_utils import build_tests
 from cluecode_test_utils import load_copyright_tests
+from commoncode.testcase import FileBasedTesting
 
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
+pytestmark = pytest.mark.scanslow
+
 
 """
 This test suite is based on many sources including a rather large subset of
 Android ICS, providing a rather diversified sample of a typical Linux-based user
 space environment.
 """
-
 
 class TestCopyrightDataDriven(FileBasedTesting):
     # test functions are attached to this class at module import time

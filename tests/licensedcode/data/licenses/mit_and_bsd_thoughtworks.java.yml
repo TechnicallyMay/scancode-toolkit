@@ -1,3 +1,4 @@
 license_expressions:
-    - mit
-    - bsd-new
+  - mit
+  - mit
+  - bsd-new

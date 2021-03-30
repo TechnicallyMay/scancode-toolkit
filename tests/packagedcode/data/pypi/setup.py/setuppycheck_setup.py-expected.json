@@ -3,7 +3,7 @@
   "namespace": null,
   "name": "setuppycheck",
   "version": null,
-  "qualifiers": null,
+  "qualifiers": {},
   "subpath": null,
   "primary_language": "Python",
   "description": "Checks for questionable practices in setup.py files.",
@@ -13,8 +13,8 @@
       "type": "person",
       "role": "author",
       "name": "Marc Abramowitz",
-      "email": null,
-      "url": null
+      "email": "msabramo@gmail.com",
+      "url": "https://github.com/msabramo/setuppycheck"
     }
   ],
   "keywords": [],
@@ -35,12 +35,13 @@
     "classifiers": []
   },
   "notice_text": null,
-  "manifest_path": null,
+  "root_path": null,
   "dependencies": [],
   "contains_source_code": null,
   "source_packages": [],
+  "extra_data": {},
   "purl": "pkg:pypi/setuppycheck",
-  "repository_homepage_url": null,
+  "repository_homepage_url": "https://pypi.org/project/setuppycheck",
   "repository_download_url": null,
-  "api_data_url": null
+  "api_data_url": "http://pypi.python.org/pypi/setuppycheck/json"
 }

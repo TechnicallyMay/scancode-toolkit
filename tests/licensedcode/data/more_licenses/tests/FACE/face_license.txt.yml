@@ -1,3 +1,5 @@
 license_expressions:
-  - TODO
-expected_failure: yes
+    - ace-tao
+    - ace-tao
+    - ace-tao
+

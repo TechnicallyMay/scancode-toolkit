@@ -29,11 +29,11 @@ from __future__ import unicode_literals
 import os
 
 from commoncode.testcase import FileBasedTesting
-
 from licensedcode import index
 from licensedcode import match_aho
 from licensedcode import models
 from licensedcode import query
+
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 

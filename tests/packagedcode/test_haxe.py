@@ -26,40 +26,39 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import os.path
+from os import path
 
 from packagedcode import haxe
-from scancode.resource import Codebase
-
+from commoncode.resource import Codebase
 from packages_test_utils import PackageTester
 
 
 class TestHaxe(PackageTester):
-    test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    test_data_dir = path.join(path.dirname(__file__), 'data')
 
     def test_parse_basic(self):
         test_file = self.get_test_loc('haxe/basic/haxelib.json')
         expected_loc = self.get_test_loc('haxe/basic/haxelib.json.expected')
         package = haxe.parse(test_file)
-        self.check_package(package, expected_loc)
+        self.check_package(package, expected_loc, regen=False)
 
     def test_parse_basic2(self):
         test_file = self.get_test_loc('haxe/basic2/haxelib.json')
         expected_loc = self.get_test_loc('haxe/basic2/haxelib.json.expected')
         package = haxe.parse(test_file)
-        self.check_package(package, expected_loc)
+        self.check_package(package, expected_loc, regen=False)
 
     def test_parse_deps(self):
         test_file = self.get_test_loc('haxe/deps/haxelib.json')
         expected_loc = self.get_test_loc('haxe/deps/haxelib.json.expected')
         package = haxe.parse(test_file)
-        self.check_package(package, expected_loc)
+        self.check_package(package, expected_loc, regen=False)
 
     def test_parse_tags(self):
         test_file = self.get_test_loc('haxe/tags/haxelib.json')
         expected_loc = self.get_test_loc('haxe/tags/haxelib.json.expected')
         package = haxe.parse(test_file)
-        self.check_package(package, expected_loc)
+        self.check_package(package, expected_loc, regen=False)
 
     def test_root_dir(self):
         test_file = self.get_test_loc('haxe/tags/haxelib.json')

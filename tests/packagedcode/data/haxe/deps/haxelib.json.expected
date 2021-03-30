@@ -3,7 +3,7 @@
   "namespace": null,
   "name": "selecthxml",
   "version": "0.5.1",
-  "qualifiers": null,
+  "qualifiers": {},
   "subpath": null,
   "primary_language": "Haxe",
   "description": "Allows type-safe CSS-style selection on Xml objects.",
@@ -45,7 +45,7 @@
   "license_expression": "unknown",
   "declared_license": "BSD",
   "notice_text": null,
-  "manifest_path": null,
+  "root_path": null,
   "dependencies": [
     {
       "purl": "pkg:haxe/tink_core",
@@ -66,6 +66,7 @@
   ],
   "contains_source_code": null,
   "source_packages": [],
+  "extra_data": {},
   "purl": "pkg:haxe/selecthxml@0.5.1",
   "repository_homepage_url": "https://lib.haxe.org/p/selecthxml",
   "repository_download_url": "https://lib.haxe.org/p/selecthxml/0.5.1/download/",

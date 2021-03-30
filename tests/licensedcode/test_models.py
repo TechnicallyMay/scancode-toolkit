@@ -31,6 +31,8 @@ import json
 import os
 
 from commoncode.testcase import FileBasedTesting
+from commoncode.system import py2
+from commoncode.system import py3
 
 from licensedcode import cache
 from licensedcode import index
@@ -42,11 +44,23 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 def check_json(expected, results, regen=False):
     if regen:
-        with open(expected, 'wb') as ex:
+        if py2:
+            mode = 'wb'
+        if py3:
+            mode = 'w'
+        with open(expected, mode) as ex:
             json.dump(results, ex, indent=2, separators=(',', ': '))
     with open(expected) as ex:
         expected = json.load(ex, object_pairs_hook=OrderedDict)
     assert expected == results
+
+
+def as_sorted_mapping_seq(licenses):
+    """
+    Given a `licenses` iterator of to_dict()'able objects, return a sorted list
+    of these.
+    """
+    return sorted((l.to_dict() for l in licenses), key=lambda x: tuple(x.items()))
 
 
 class TestLicense(FileBasedTesting):
@@ -56,7 +70,7 @@ class TestLicense(FileBasedTesting):
         test_dir = self.get_test_loc('models/licenses')
         lics = models.load_licenses(test_dir)
         # Note: one license is obsolete and not loaded. Other are various exception/version cases
-        results = sorted(l.to_dict() for l in lics.values())
+        results = as_sorted_mapping_seq(lics.values())
         expected = self.get_test_loc('models/licenses.load.expected.json')
         check_json(expected, results)
 
@@ -67,7 +81,7 @@ class TestLicense(FileBasedTesting):
             l.dump()
         lics = models.load_licenses(test_dir, with_deprecated=True)
         # Note: one license is obsolete and not loaded. Other are various exception/version cases
-        results = sorted(l.to_dict() for l in lics.values())
+        results = as_sorted_mapping_seq(lics.values())
         expected = self.get_test_loc('models/licenses.dump.expected.json')
         check_json(expected, results)
 
@@ -80,7 +94,7 @@ class TestLicense(FileBasedTesting):
 
         lics = models.load_licenses(new_dir, with_deprecated=True)
         # Note: one license is obsolete and not loaded. Other are various exception/version cases
-        results = sorted(l.to_dict() for l in lics.values())
+        results = as_sorted_mapping_seq(lics.values())
         expected = self.get_test_loc('models/licenses.expected.json')
         check_json(expected, results)
 
@@ -93,7 +107,7 @@ class TestLicense(FileBasedTesting):
 
         lics = models.load_licenses(new_dir, with_deprecated=True)
         # Note: one license is obsolete and not loaded. Other are various exception/version cases
-        results = sorted(l.to_dict() for l in lics.values())
+        results = as_sorted_mapping_seq(lics.values())
         expected = self.get_test_loc('models/licenses-new-key.expected.json')
         check_json(expected, results)
 
@@ -107,7 +121,7 @@ class TestLicense(FileBasedTesting):
         test_dir = self.get_test_loc('models/licenses')
         lics = models.load_licenses(test_dir)
         rules = models.build_rules_from_licenses(lics)
-        results = sorted(r.to_dict() for r in rules)
+        results = as_sorted_mapping_seq(rules)
         expected = self.get_test_loc('models/license_rules.expected.json')
         check_json(expected, results)
 
@@ -133,8 +147,14 @@ class TestLicense(FileBasedTesting):
                 'No name',
                 'No category',
                 'No owner'],
-            'gpl-1.0': ['Unknown license category: GNU Copyleft'],
-            'w3c-docs-19990405': ['Unknown license category: Permissive Restricted']
+            'gpl-1.0': [
+                'Unknown license category: GNU Copyleft.\nUse one of these valid categories:\n'
+                'Commercial\nCopyleft\nCopyleft Limited\nFree Restricted\n'
+                'Patent License\nPermissive\nProprietary Free\nPublic Domain\nSource-available\nUnstated License'],
+            'w3c-docs-19990405': [
+                'Unknown license category: Permissive Restricted.\nUse one of these valid categories:\n'
+                'Commercial\nCopyleft\nCopyleft Limited\nFree Restricted\n'
+                'Patent License\nPermissive\nProprietary Free\nPublic Domain\nSource-available\nUnstated License']
         }
 
         assert expected_errors == errors
@@ -177,7 +197,7 @@ class TestRule(FileBasedTesting):
 
         def create_test_file(text):
             tf = self.get_temp_file()
-            with open(tf, 'wb') as of:
+            with open(tf, 'w') as of:
                 of.write(text)
             return tf
 
@@ -190,7 +210,7 @@ class TestRule(FileBasedTesting):
         test_dir = self.get_test_loc('models/rules')
         rules = list(models.load_rules(test_dir))
         assert all(isinstance(r, models.Rule) for r in rules)
-        results = sorted(r.to_dict() for r in rules)
+        results = as_sorted_mapping_seq(rules)
         expected = self.get_test_loc('models/rules.expected.json')
         check_json(expected, results)
 
@@ -201,7 +221,7 @@ class TestRule(FileBasedTesting):
             r.dump()
 
         rules = list(models.load_rules(test_dir))
-        results = sorted(r.to_dict() for r in rules)
+        results = as_sorted_mapping_seq(rules)
         expected = self.get_test_loc('models/rules.expected.json')
         check_json(expected, results)
 
@@ -223,7 +243,7 @@ class TestRule(FileBasedTesting):
         except NotImplementedError:
             pass
 
-        assert not rule.small()
+        assert not rule.is_small
         assert rule.relevance == 100
 
     def test_spdxrule_with_invalid_expression(self):
@@ -268,23 +288,64 @@ class TestRule(FileBasedTesting):
         ]
         assert expected == rule_tokens
 
+    def test_compute_thresholds_occurences(self):
+        minimum_coverage = 0.0
+        length = 54
+        high_length = 11
+
+        results = models.compute_thresholds_occurences(minimum_coverage, length, high_length)
+        expected_min_cov = 0.0
+        expected_min_matched_length = 4
+        expected_min_high_matched_length = 3
+        expected = expected_min_cov, expected_min_matched_length, expected_min_high_matched_length
+        assert expected == results
+
+        length_unique = 39
+        high_length_unique = 7
+
+        results = models.compute_thresholds_unique(
+            minimum_coverage, length, length_unique, high_length_unique)
+        expected_min_matched_length_unique = 4
+        expected_min_high_matched_length_unique = 3
+        expected = expected_min_matched_length_unique, expected_min_high_matched_length_unique
+        assert expected == results
+
+
     def test_Thresholds(self):
         r1_text = 'licensed under the GPL, licensed under the GPL'
         r1 = models.Rule(text_file='r1', license_expression='apache-1.1', stored_text=r1_text)
         r2_text = 'licensed under the GPL, licensed under the GPL' * 10
         r2 = models.Rule(text_file='r1', license_expression='apache-1.1', stored_text=r2_text)
         _idx = index.LicenseIndex([r1, r2])
-        assert models.Thresholds(high_len=4, low_len=4, length=8, small=True, min_high=4, min_len=8) == r1.thresholds()
-        assert models.Thresholds(high_len=31, low_len=40, length=71, small=False, min_high=3, min_len=4) == r2.thresholds()
 
-        r1_text = 'licensed under the GPL,{{}} licensed under the GPL'
-        r1 = models.Rule(text_file='r1', license_expression='apache-1.1', stored_text=r1_text)
-        r2_text = 'licensed under the GPL, licensed under the GPL' * 10
-        r2 = models.Rule(text_file='r1', license_expression='apache-1.1', stored_text=r2_text)
+        results = models.compute_thresholds_occurences(r1.minimum_coverage, r1.length, r1.high_length)
+        expected_min_cov = 80
+        expected_min_matched_length = 8
+        expected_min_high_matched_length = 4
+        expected = expected_min_cov, expected_min_matched_length, expected_min_high_matched_length
+        assert expected == results
 
-        _idx = index.LicenseIndex([r1, r2])
-        assert models.Thresholds(high_len=4, low_len=4, length=8, small=True, min_high=4, min_len=8) == r1.thresholds()
-        assert models.Thresholds(high_len=31, low_len=40, length=71, small=False, min_high=3, min_len=4) == r2.thresholds()
+        results = models.compute_thresholds_unique(
+            r1.minimum_coverage, r1.length, r1.length_unique, r1.high_length_unique)
+
+        expected_min_matched_length_unique = 3
+        expected_min_high_matched_length_unique = 2
+        expected = expected_min_matched_length_unique, expected_min_high_matched_length_unique
+        assert expected == results
+
+        results = models.compute_thresholds_occurences(r2.minimum_coverage, r2.length, r2.high_length)
+        expected_min_cov = 0.0
+        expected_min_matched_length = 4
+        expected_min_high_matched_length = 3
+        expected = expected_min_cov, expected_min_matched_length, expected_min_high_matched_length
+        assert expected == results
+
+        results = models.compute_thresholds_unique(
+            r2.minimum_coverage, r2.length, r2.length_unique, r2.high_length_unique)
+        expected_min_matched_length_unique = 4
+        expected_min_high_matched_length_unique = 1
+        expected = expected_min_matched_length_unique, expected_min_high_matched_length_unique
+        assert expected == results
 
     def test_compute_relevance_does_not_change_stored_relevance(self):
         rule = models.Rule(stored_text='1', license_expression='public-domain')
@@ -405,3 +466,9 @@ class TestRule(FileBasedTesting):
             self.fail('Exception not raised.')
         except Exception as  e:
             assert expected in str(e)
+
+    def test_load_rules_loads_file_content_at_path_and_not_path_as_string(self):
+        rule_dir = self.get_test_loc('models/similar_names')
+        rules = list(models.load_rules(rule_dir))
+        result = [' '.join(list(r.tokens())[-4:]) for r in  rules]
+        assert not any([r == 'rules proprietary 10 rule' for r in result])

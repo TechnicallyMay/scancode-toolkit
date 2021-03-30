@@ -30,7 +30,6 @@ import os.path
 import saneyaml
 
 from packagedcode import freebsd
-
 from packages_test_utils import PackageTester
 
 

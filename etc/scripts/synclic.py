@@ -45,6 +45,7 @@ import requests
 
 from commoncode import fetch
 from commoncode import fileutils
+from commoncode import compat
 
 import licensedcode
 from licensedcode.models import load_licenses
@@ -281,7 +282,7 @@ def get_match(text):
         and rule.is_license and len(rule_licenses) == 1
         and match.matcher == '1-hash'
         and match.score() == 100
-        and match.qlen == query_len
+        and match.len() == query_len
     )
 
     if is_exact:
@@ -373,7 +374,7 @@ class SpdxSource(ExternalLicensesSource):
         zip_url = 'https://github.com/{from_repo}/archive/{tag}.zip'.format(**locals())
         if TRACE_FETCH: print('Fetching SPDX license data version:', tag, 'from:', zip_url)
         licenses_zip = fetch.download_url(zip_url, timeout=120)
-        if TRACE_FETCH: print('Fteched SPDX licenses to:', licenses_zip)
+        if TRACE_FETCH: print('Fetched SPDX licenses to:', licenses_zip)
         with zipfile.ZipFile(licenses_zip) as archive:
             for path in archive.namelist():
                 if not (path.endswith('.json')
@@ -384,7 +385,7 @@ class SpdxSource(ExternalLicensesSource):
                     # Skip the old plus licenses. We use them in
                     # ScanCode, but they are deprecated in SPDX.
                     continue
-                details = json.loads(archive.read(path))
+                details = json.loads(archive.read(path), object_pairs_hook=OrderedDict)
                 lic = self.build_license(details, scancode_licenses)
                 if lic:
                     yield lic
@@ -410,7 +411,7 @@ class SpdxSource(ExternalLicensesSource):
                 'lgpl-2.0', 'lgpl-2.1', 'lgpl-3.0',
                 'agpl-1.0', 'agpl-2.0', 'agpl-3.0',
                 'gfdl-1.1', 'gfdl-1.2', 'gfdl-1.3',
-                'nokia-qt-exception-1.1', ]):
+                'nokia-qt-exception-1.1', 'bzip2-1.0.5']):
             return
 
         deprecated = mapping.get('isDeprecatedLicenseId', False)
@@ -423,6 +424,8 @@ class SpdxSource(ExternalLicensesSource):
                 # 'gfdl-1.1+', 'gfdl-1.2+', 'gfdl-1.3+'
                 # 'agpl-3.0+'
                 deprecated = False
+
+        # TODO: handle other_spdx_license_keys in license yaml files.
 
         other_urls = mapping.get('seeAlso', [])
         other_urls = (o for o in other_urls if o)
@@ -815,6 +818,9 @@ def merge_licenses(scancode_license, external_license, updatable_attributes,
     matching. In this case, the key that is used is that from the ScanCode
     license.
     """
+    if TRACE:
+        print('merge_licenses:', scancode_license, external_license)
+
     updated_scancode_attributes = []
 
     def update_scancode(_attrib, _sc_val, _ext_val):
@@ -892,7 +898,7 @@ def merge_licenses(scancode_license, external_license, updatable_attributes,
 
             continue
 
-        if isinstance(scancode_value, basestring) and isinstance(external_value, basestring):
+        if (isinstance(scancode_value, compat.unicode) and isinstance(external_value, compat.unicode)):
             # keep the stripped and normalized spaces value
             # normalized spaces
             normalized_scancode_value = ' '.join(scancode_value.split())

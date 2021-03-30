@@ -28,6 +28,8 @@ from __future__ import unicode_literals
 from os.path import dirname
 from os.path import join
 
+import pytest
+
 from commoncode.testcase import FileDrivenTesting
 from scancode.cli_test_utils import run_scan_click
 from scancode.cli_test_utils import check_json_scan
@@ -37,19 +39,20 @@ class TestHasFindings(FileDrivenTesting):
 
     test_data_dir = join(dirname(__file__), 'data')
 
+    @pytest.mark.scanslow
     def test_scan_only_findings(self):
         test_dir = self.extract_test_tar('plugin_only_findings/basic.tgz')
         result_file = self.get_temp_file('json')
-        expected_file = self.get_test_loc('plugin_only_findings/expected.json')
+        expected_file = self.get_test_loc('plugin_only_findings/basic.expected.json')
         run_scan_click(['-clip', '--only-findings', '--json', result_file, test_dir])
         check_json_scan(expected_file, result_file, remove_file_date=True, regen=False)
 
     def test_scan_only_findings_with_errors(self):
-        test_dir = self.get_test_loc('plugin_only_findings/errors')
+        test_file = self.get_test_loc('plugin_only_findings/errors.json')
         result_file = self.get_temp_file('json')
         expected_file = self.get_test_loc('plugin_only_findings/errors.expected.json')
-        run_scan_click(['-ci', '--only-findings', '--timeout', '0.0001', 
-                        '--json-pp', result_file, test_dir], expected_rc=1)
+        run_scan_click(['--from-json', test_file, '--only-findings',
+                        '--json-pp', result_file])
         check_json_scan(expected_file, result_file, remove_file_date=True, regen=False)
 
     def test_scan_only_findings_with_only_info(self):

@@ -4,7 +4,6 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import io
 from glob import glob
 from os.path import basename
 from os.path import dirname
@@ -16,7 +15,7 @@ import sys
 from setuptools import find_packages
 from setuptools import setup
 
-version = '3.0.2'
+version = '3.2.3'
 
 #### Small hack to force using a plain version number if the option
 #### --plain-version is passed to setup.py
@@ -28,6 +27,11 @@ try:
 except ValueError:
     pass
 ####
+
+
+_sys_v0 = sys.version_info[0]
+py2 = _sys_v0 == 2
+py3 = _sys_v0 == 3
 
 
 def get_version(default=version, template='{tag}.{distance}.{commit}{dirty}',
@@ -85,9 +89,10 @@ def get_git_version():
 
 
 def read(*names, **kwargs):
-    return io.open(
-        join(dirname(__file__), *names),
-        encoding=kwargs.get('encoding', 'utf8')
+    import os
+    return open(
+        os.path.join(os.path.dirname(__file__), *names),
+        #encoding=kwargs.get('encoding', 'utf8')
     ).read()
 
 
@@ -115,13 +120,14 @@ setup(
         'License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.6',
         'Topic :: Utilities',
     ],
     keywords=[
         'open source', 'scan', 'license', 'package', 'dependency',
         'copyright', 'filetype', 'author', 'extract', 'licensing',
     ],
-    python_requires='>=2.7,<3',    
+    python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, <4',
     install_requires=[
         # Hack to support pip 8 (for those poor sods forced to use ubuntu 16.04's system pip)
         # See https://github.com/nexB/scancode-toolkit/issues/1463
@@ -131,31 +137,27 @@ setup(
         # cluecode
         # Some nltk version ranges are buggy
         'nltk >= 3.2, < 4.0',
+        'py2_ipaddress >= 2.0, <3.5; python_version < "3"',
+        'urlpy',
         'publicsuffix2',
-        'py2-ipaddress >= 2.0, <3.5;python_version<"3"',
-        'url >= 0.1.4, < 0.1.6',
-        'fingerprints == 0.5.4',
-
-        # extractcode
-        'patch >= 1.15, < 1.20 ',
-        # to work around bug http://bugs.python.org/issue19839
-        # on multistream bzip2 files: this can removed in Python 3.
-        'bz2file >= 0.98',
-        'extractcode-libarchive',
-        'extractcode-7z',
+        'fingerprints >= 0.6.0, < 1.0.0',
 
         # commoncode
-        'backports.os == 0.1.1',
+        'commoncode >= 20.09',
+        'backports.os == 0.1.1; python_version < "3"',
+
         'future >= 0.16.0',
-        'text-unidecode >= 1.0, < 2.0',
         'saneyaml',
+
+        # plugincode
+        'plugincode',
 
         # licensedcode
         'bitarray >= 0.8.1, < 1.0.0',
         'intbitset >= 2.3.0,  < 3.0',
         'boolean.py >= 3.5,  < 4.0',
-        'license_expression >= 0.99,  < 1.0',
-        'pyahocorasick >= 1.1, < 1.2',
+        'license_expression >= 0.99',
+        'pyahocorasick >= 1.4, < 1.5',
 
         # multiple
         'lxml >= 4.0.0, < 5.0.0',
@@ -166,48 +168,65 @@ setup(
         'six',
         'pdfminer.six >= 20170720',
         'pycryptodome >= 3.4',
+        'chardet >= 3.0.0, <4.0.0',
 
         # typecode
-        'binaryornot >= 0.4.0',
-        'chardet >= 3.0.0, <4.0.0',
-        # note that we use a short version range because we use a simpler lexer list
-        'pygments >= 2.2.0, <2.3',
-        'typecode-libmagic',
+        'typecode',
 
         # packagedcode
+        'debut >= 0.9.4',
         'pefile >= 2018.8.8',
-        'pymaven-patch >= 0.2.4',
+        'pymaven_patch >= 0.2.8',
         'requests >= 2.7.0, < 3.0.0',
-        'packageurl-python >= 0.7.0',
+        'packageurl_python >= 0.7.0',
         'xmltodict >= 0.11.0',
         'javaproperties >= 0.5',
         'toml >= 0.10.0',
+        'gemfileparser >= 0.7.0',
+        'pkginfo >= 1.5.0.1',
+        'dparse2',
+        'pygments >= 2.4.2, <2.5.1',
+
+        # used to fix mojibake in Windows PE
+        # for now we use the evrsion that works on both Python 2 and 3
+        'ftfy <  5.0.0',
 
         # scancode
-        'click >= 6.0.0, < 7.0.0',
+        # Click 7.0 is broken https://github.com/pallets/click/issues/1125
+        'click >= 6.7, !=7.0',
         'colorama >= 0.3.9',
         'pluggy >= 0.4.0, < 1.0',
-        'attrs >=17.4, < 19.0',
-        'cattrs',
-        'typing >=3.6, < 3.7',
+        'attrs >= 18.1, !=20.1.0',
+        # Importing typing causes errors after python 3.6.
+        # See https://github.com/python/typing/issues/573
+        'typing >=3.6, < 3.7; python_version < "3.7"',
 
         # scancode outputs
         'jinja2 >= 2.7.0, < 3.0.0',
         'MarkupSafe >= 0.23',
         'simplejson',
-        'spdx-tools >= 0.5.4',
+        'spdx_tools >= 0.6.0',
         'unicodecsv',
 
         # ScanCode caching and locking
-        'yg.lockfile >= 2.0.1, < 3.0.0',
-            # used by yg.lockfile
-            'contextlib2', 'pytz', 'tempora', 'jaraco.timing',
-        'zc.lockfile >= 1.0.0, < 2.0.1',
+        'yg.lockfile >= 2.3, < 3.0.0',
+        # used by yg.lockfile
+        'contextlib2', 'pytz', 'tempora', 'jaraco.functools',
+        'zc.lockfile >= 2.0.0, < 3.0.0',
     ],
+
+    extras_require={
+        'full': [
+            'extractcode',
+            'extractcode_7z',
+            'extractcode_libarchive',
+            'typecode_libmagic',
+        ],
+    },
+
     entry_points={
         'console_scripts': [
             'scancode = scancode.cli:scancode',
-            'extractcode = scancode.extract_cli:extractcode',
         ],
 
         # scancode_pre_scan is the entry point for pre_scan plugins executed
@@ -263,6 +282,8 @@ setup(
             'mark-source = scancode.plugin_mark_source:MarkSource',
             'classify-package = summarycode.classify:PackageTopAndKeyFilesTagger',
             'is-license-text = licensedcode.plugin_license_text:IsLicenseText',
+            'filter-clues = cluecode.plugin_filter_clues:RedundantCluesFilter',
+            'consolidate = summarycode.plugin_consolidate:Consolidator',
         ],
 
         # scancode_output_filter is the entry point for filter plugins executed

@@ -34,12 +34,14 @@ from os.path import expanduser
 
 import attr
 import saneyaml
+from packageurl import PackageURL
 from six import string_types
 
+from commoncode import archive
 from commoncode import fileutils
-from extractcode import archive
-from extractcode.uncompress import get_gz_compressed_file_content
 from packagedcode import models
+from packagedcode.gemfile_lock import GemfileLockParser
+from packagedcode.spec import Spec
 from packagedcode.utils import combine_expressions
 
 
@@ -107,28 +109,26 @@ class RubyGem(models.Package):
 
         # an unextracted .gen archive
         if location.endswith('.gem'):
-            return get_gem_package(location)
+            yield get_gem_package(location)
 
         # an extractcode-extracted .gen archive
         if location.endswith('metadata.gz-extract'):
             with open(location, 'rb') as met:
                 metadata = met.read()
             metadata = saneyaml.load(metadata)
-            return build_rubygem_package(metadata)
+            yield build_rubygem_package(metadata)
 
         if location.endswith('.gemspec'):
-            # TODO implement me
-            return
+            yield build_packages_from_gemspec(location)
 
         if location.endswith('Gemfile'):
-            # TODO implement me
-            return
+            # TODO: implement me
+            pass
 
         if location.endswith('Gemfile.lock'):
-            # TODO implement me
-            return
-
-        return
+            gemfile_lock = GemfileLockParser(location)
+            for package in build_packages_from_gemfile_lock(gemfile_lock):
+                yield package
 
     def repository_homepage_url(self, baseurl=default_web_baseurl):
         return rubygems_homepage_url(self.name, self.version, repo=baseurl)
@@ -148,7 +148,6 @@ class RubyGem(models.Package):
     @classmethod
     def extra_root_dirs(cls):
         return ['data.tar.gz-extract', 'metadata.gz-extract']
-
 
 
 def compute_normalized_license(declared_license):
@@ -178,6 +177,8 @@ def rubygems_homepage_url(name, version, repo='https://rubygems.org/gems'):
     For instance: https://rubygems.org/gems/mocha/versions/1.7.0 or
     https://rubygems.org/gems/mocha
     """
+    if not name:
+        return
     repo = repo.rstrip('/')
     if version:
         version = version.strip().strip('/')
@@ -194,6 +195,8 @@ def rubygems_download_url(name, version, platform=None, repo='https://rubygems.o
 
     For example: https://rubygems.org/downloads/mocha-1.7.0.gem
     """
+    if not name or not version:
+        return
     repo = repo.rstrip('/')
     name = name.strip().strip('/')
     version = version.strip().strip('/')
@@ -247,10 +250,7 @@ def get_gem_metadata(location):
         # Extract first level of tar archive
         extract_loc = fileutils.get_temp_dir(prefix='scancode-extract-')
         abs_location = abspath(expanduser(location))
-        warnings = archive.extract_tar(abs_location, extract_loc) or []
-        if warnings:
-            raise Exception('Failed to extract RubyGem .gem file.\n' + '\n'.join(warnings))
-
+        archive.extract_tar(abs_location, extract_loc)
 
         # The gzipped metadata is the second level of archive.
         metadata = os.path.join(extract_loc, 'metadata')
@@ -262,9 +262,7 @@ def get_gem_metadata(location):
                 content = met.read()
 
         elif os.path.exists(metadata_gz):
-            content, warnings = get_gz_compressed_file_content(metadata_gz)
-            if warnings:
-                raise Exception('Failed to extract RubyGem .gem/metadata.gz file.\n' + '\n'.join(warnings))
+            content= archive.get_gz_compressed_file_content(metadata_gz)
 
         else:
             raise Exception('No gem metadata found in RubyGem .gem file.')
@@ -297,9 +295,9 @@ def build_rubygem_package(gem_data, download_url=None, package_url=None):
     # Since the gem spec doc is not clear https://guides.rubygems.org
     # /specification-reference/#licenseo, we will treat a list of licenses and a
     # conjunction for now (e.g. AND)
-    license = gem_data.get('license')
+    lic = gem_data.get('license')
     licenses = gem_data.get('licenses')
-    declared_license = licenses_mapper(license, licenses)
+    declared_license = licenses_mapper(lic, licenses)
 
     package = RubyGem(
         name=name,
@@ -380,18 +378,19 @@ def build_rubygem_package(gem_data, download_url=None, package_url=None):
     return package
 
 
-def licenses_mapper(license, licenses):
+def licenses_mapper(lic, lics):
     """
-    Return declared_licenses list based on the `license` and
-    `licenses` values found in a package.
+    Return a `declared_licenses` list based on the `lic` license and
+    `lics` licenses values found in a package.
     """
     declared_licenses = []
-    if license:
+    if lic:
         declared_licenses.append(str(license).strip())
-    if licenses:
-        for lic in licenses:
-            if lic and lic.strip():
-                declared_licenses.append(lic.strip())
+    if lics:
+        for lic in lics:
+            lic = lic.strip()
+            if lic:
+                declared_licenses.append(lic)
     return declared_licenses
 
 
@@ -496,10 +495,10 @@ def get_dependencies(dependencies):
             constraints.append(version_constraint)
 
         # if we have only one version constraint and this is "=" then we are resolved
-        is_resolved =False
+        is_resolved = False
         if constraints and len(constraints) == 1:
             is_resolved = constraint == '='
-        
+
         version_constraint = ', '.join(constraints)
 
         dep = models.DependentPackage(
@@ -513,7 +512,6 @@ def get_dependencies(dependencies):
         deps.append(dep)
 
     return deps
-
 
 
 # mapping of {Gem license: scancode license key}
@@ -555,27 +553,6 @@ LICENSES_MAPPING = {
 
 
 ################################################################################
-def parse_gemspec(location):
-    raise NotImplementedError
-
-
-def get_gemspec_data(location):
-    """
-    Return a mapping of Gem data from parsing a .gemspec  file.
-    """
-    if not location.endswith('.gemspec'):
-        return
-
-    spec = spec_defaults()
-    raw_spec = parse_gemspec(location)
-    if TRACE:
-        keys = raw_spec.keys()
-        logger.debug('\nRubygems spec keys for %(gemfile)r:\n%(keys)r' % locals())
-    spec.update(raw_spec)
-    spec = normalize(spec)
-    return spec
-
-
 def spec_defaults():
     """
     Return a mapping with spec attribute defaults to ensure that the
@@ -644,90 +621,119 @@ def normalize(gem_data, known_fields=known_fields):
     )
 
 
-def parse_spec(location):
-    pass
-
-
-class GemSpec(object):
+def build_packages_from_gemspec(location):
     """
-    Represent a Gem specification.
+    Return RubyGem Package from gemspec file.
     """
+    gemspec_object = Spec()
+    gemspec_data = gemspec_object.parse_spec(location)
+    
+    name = gemspec_data.get('name')
+    version = gemspec_data.get('version')
+    homepage_url = gemspec_data.get('homepage_url')
+    summary = gemspec_data.get('summary')
+    description = gemspec_data.get('description')
+    if len(summary) > len(description):
+        description = summary
 
-    # TODO: Check if we should use 'summary' instead of description
-    def __init__(self, location):
-        """
-        Initialize from the gem spec or gem file at location.
-        """
-        spec = parse_spec(location)
-        self.location = location
-        self.description = spec.get('description')
-        self.summary = spec.get('summary')
-        self.author = spec.get('author')
-        self.authors = spec.get('authors')
-        # can be a list
-        self.email = spec.get('email')
+    declared_license = gemspec_data.get('license')
+    if declared_license:
+        declared_license = declared_license.split(',')
+
+    author = gemspec_data.get('author') or []
+    email = gemspec_data.get('email') or []
+    parties = list(party_mapper(author, email))
+
+    package = RubyGem(
+        name=name,
+        version=version,
+        parties=parties,
+        homepage_url=homepage_url,
+        description=description,
+        declared_license=declared_license
+    )
+
+    dependencies = gemspec_data.get('dependencies', {}) or {}
+    package_dependencies = []
+    for name, version in dependencies.items():
+        package_dependencies.append(
+            models.DependentPackage(
+                purl=PackageURL(
+                    type='gem',
+                    name=name
+                ).to_string(),
+                requirement=', '.join(version),
+                scope='dependencies',
+                is_runtime=True,
+                is_optional=False,
+                is_resolved=False,
+            )
+        )
+    package.dependencies = package_dependencies
+
+    return package
 
 
-        self.spec['licenses'] = self.map_licenses()
-        self.make_unique()
+def party_mapper(author, email):
+    """
+    Yields a Party object with author and email.
+    """
+    for person in author:
+        yield models.Party(
+            type=models.party_person,
+            name=person,
+            role='author')
 
-    def __str__(self):
-        return '<{}: {}>'.format(self.__class__.__name__, self.location)
+    for person in email:
+        yield models.Party(
+            type=models.party_person,
+            email=person,
+            role='email')
 
-    def make_unique(self):
-        """
-        Ensure that lists in the spec only contain unique values.
-        """
-        new_spec = {}
-        for key, value in self.spec.items:
-            if isinstance(value, list):
-                newlist = []
-                for item in value:
-                    if item not in newlist:
-                        newlist.append(item)
-                new_spec[key] = newlist
-            else:
-                new_spec[key] = value
-        return new_spec
 
-    def get_description(self):
-        """
-        Using 'description' over 'summary' unless summary contains
-        more data.
-        See http://guides.rubygems.org/specification-reference/
-        Note that it is common to see this is spec files: s.description = s.summary
-        """
-        description = self.spec.get('description', '')
-        summary = self.spec.get('summary', '')
+def build_packages_from_gemfile_lock(gemfile_lock):
+    """
+    Yield RubyGem Packages from a given GemfileLockParser `gemfile_lock`
+    """
+    package_dependencies = []
+    for _, gem in gemfile_lock.all_gems.items():
+        package_dependencies.append(
+            models.DependentPackage(
+                purl=PackageURL(
+                    type='gem',
+                    name=gem.name,
+                    version=gem.version
+                ).to_string(),
+                requirement=', '.join(gem.requirements),
+                scope='dependencies',
+                is_runtime=True,
+                is_optional=False,
+                is_resolved=True,
+            )
+        )
 
-        content = description
-        # FIXME: we should join these.
-        if len(summary) > len(description):
-            content = summary
+    yield RubyGem(dependencies=package_dependencies)
 
-        content = ' '.join(content.split())
-        return content.strip()
+    for _, gem in gemfile_lock.all_gems.items():
+        deps = []
+        for _dep_name, dep in gem.dependencies.items():
+            deps.append(
+                models.DependentPackage(
+                    purl=PackageURL(
+                        type='gem',
+                        name=dep.name,
+                        version=dep.version
+                    ).to_string(),
+                    requirement=', '.join(dep.requirements),
+                    scope='dependencies',
+                    is_runtime=True,
+                    is_optional=False,
+                    is_resolved=True,
+                )
+            )
 
-    def get_email(self):
-        """
-        Join the list of emails as a comma-separated string.
-        """
-        email = self.spec.get('email', u'')
-        if isinstance(email, list):
-            email = u', '.join(email)
-        return email
-
-    def map_licenses(self):
-        licenses = self.spec.get('licenses', [])
-        if not isinstance(licenses, list):
-            licenses = [licenses]
-
-        mapped_licenses = []
-        for lic in licenses:
-            mapped_license = LICENSES_MAPPING.get(lic, None)
-            if mapped_license:
-                mapped_licenses.append(mapped_license)
-            else:
-                if TRACE:
-                    logger.warning('WARNING: {}: no license mapping for: "{}"'.format(self.filename, lic))
-        return mapped_licenses
+        yield RubyGem(
+            name=gem.name,
+            version=gem.version,
+            dependencies=deps
+        )

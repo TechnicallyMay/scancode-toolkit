@@ -31,10 +31,19 @@ from collections import OrderedDict
 import json
 import os.path
 
+from commoncode import compat
+from commoncode.system import py2
+from commoncode.system import py3
 from commoncode import text
 from commoncode import testcase
 from packagedcode.jar_manifest import parse_manifest
 from packagedcode.jar_manifest import get_normalized_package_data
+
+
+if py2:
+    mode = 'wb'
+if py3:
+    mode = 'w'
 
 
 class BaseParseManifestCase(testcase.FileBasedTesting):
@@ -50,7 +59,7 @@ class BaseParseManifestCase(testcase.FileBasedTesting):
         parsed_manifest = parse_manifest(location=test_manifest_loc)
 
         if regen:
-            with open(expected_manifest_loc, 'wb') as ex:
+            with open(expected_manifest_loc, mode) as ex:
                 json.dump(parsed_manifest, ex, indent=2)
 
         with io.open(expected_manifest_loc, encoding='utf-8') as ex:
@@ -71,11 +80,11 @@ class BaseParseManifestCase(testcase.FileBasedTesting):
         expected_json_loc = test_manifest_loc + '.package-data.json'
 
         if regen:
-            with open(expected_json_loc, 'wb') as ex:
+            with open(expected_json_loc, mode) as ex:
                 json.dump(package, ex, indent=2)
 
-        with io.open(expected_json_loc, encoding='utf-8') as ex:
-            expected = json.load(ex, object_pairs_hook=OrderedDict)
+        with io.open(expected_json_loc, 'rb') as ex:
+            expected = json.load(ex, encoding='utf-8', object_pairs_hook=OrderedDict)
 
         assert json.dumps(expected) == json.dumps(package)
 
@@ -115,10 +124,11 @@ def create_test_function(test_manifest_loc, test_name, check_parse=True, regen=F
 
     # set a proper function name to display in reports and use in discovery
     # function names are best as bytes
-    if isinstance(test_name, unicode):
+    if py2 and isinstance(test_name, compat.unicode):
         test_name = test_name.encode('utf-8')
+    if py3 and isinstance(test_name, bytes):
+        test_name = test_name.decode('utf-8')
     test_manifest.__name__ = test_name
-    test_manifest.funcname = test_name
     return test_manifest
 
 
@@ -147,10 +157,10 @@ class TestParseManifestDataDriven(BaseParseManifestCase):
 
 
 build_tests(test_dir='maven_misc/manifest', clazz=TestParseManifestDataDriven,
-            prefix='test_jar_manifest_parse_manifest_', 
+            prefix='test_jar_manifest_parse_manifest_',
             check_parse=True, regen=False)
 
 
 build_tests(test_dir='maven_misc/manifest', clazz=TestParseManifestDataDriven,
-            prefix='test_jar_manifest_get_package_data_', 
+            prefix='test_jar_manifest_get_package_data_',
             check_parse=False, regen=False)

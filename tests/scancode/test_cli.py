@@ -28,25 +28,30 @@ from __future__ import division
 from __future__ import unicode_literals
 
 from collections import OrderedDict
+import io
 import json
 import os
-from unittest.case import skipIf
 
 import click
 click.disable_unicode_literals_warning = True
+import pytest
 
 from commoncode import fileutils
 from commoncode.fileutils import fsencode
 from commoncode.testcase import FileDrivenTesting
 from commoncode.system import on_linux
 from commoncode.system import on_mac
+from commoncode.system import on_macos_14_or_higher
 from commoncode.system import on_windows
+from commoncode.system import py2
+from commoncode.system import py3
 
 from scancode.cli_test_utils import check_json_scan
 from scancode.cli_test_utils import load_json_result
 from scancode.cli_test_utils import load_json_result_from_string
 from scancode.cli_test_utils import run_scan_click
 from scancode.cli_test_utils import run_scan_plain
+
 
 test_env = FileDrivenTesting()
 test_env.test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
@@ -57,6 +62,12 @@ of these CLI tests are dependent on py.test monkeypatch to ensure we are testing
 the actual command outputs as if using a real command line call. Some are using
 a plain subprocess to the same effect.
 """
+
+
+if py2:
+    read_mode = 'rb'
+if py3:
+    read_mode = 'r'
 
 
 def test_package_option_detects_packages(monkeypatch):
@@ -98,6 +109,23 @@ def test_verbose_option_with_copyrights(monkeypatch):
     assert len(open(result_file).read()) > 10
 
 
+@pytest.mark.xfail(reason='Bug is not fixed yet')
+def test_scanned_resource_no_attribute_emails():
+    test_dir = test_env.get_test_loc('attribute_error_data/apache-1.1.txt')
+    result_file = test_env.get_temp_file('bb.json')
+    args = ['-clp', '--json-pp', result_file, test_dir, '--filter-clues']
+    result = run_scan_click(args)
+    assert "'ScannedResource' object has no attribute 'emails'" not in result.output
+
+
+def test_unwanted_log_warning_message():
+    test_dir = test_env.get_test_loc('unwanted_log_message.txt')
+    result_file = test_env.get_temp_file('json')
+    args = ['-c', '--json-pp', result_file, test_dir]
+    result = run_scan_click(args)
+    assert 'No handlers could be found for logger "bs4.dammit"' not in result.output
+
+
 def test_license_option_detects_licenses():
     test_dir = test_env.get_test_loc('license', copy=True)
     result_file = test_env.get_temp_file('json')
@@ -105,6 +133,15 @@ def test_license_option_detects_licenses():
     run_scan_click(args)
     assert os.path.exists(result_file)
     assert len(open(result_file).read()) > 10
+
+
+def test_can_call_run_scan_as_a_function():
+    from scancode.cli import run_scan
+    test_dir = test_env.get_test_loc('license', copy=True)
+    rc, results = run_scan(test_dir, license=True, copyright=True, return_results=True)
+    assert rc
+    assert len(results['files']) == 2
+    assert not results['headers'][0]['errors']
 
 
 def test_usage_and_help_return_a_correct_script_name_on_all_platforms():
@@ -128,14 +165,16 @@ def test_scan_info_does_collect_info():
     result_file = test_env.get_temp_file('json')
     args = ['--info', '--strip-root', test_dir, '--json', result_file]
     run_scan_click(args)
-    check_json_scan(test_env.get_test_loc('info/basic.expected.json'), result_file)
+    expected = test_env.get_test_loc('info/basic.expected.json')
+    check_json_scan(expected, result_file, regen=False)
 
 
 def test_scan_info_does_collect_info_with_root():
     test_dir = test_env.extract_test_tar('info/basic.tgz')
     result_file = test_env.get_temp_file('json')
     run_scan_click(['--info', test_dir, '--json', result_file])
-    check_json_scan(test_env.get_test_loc('info/basic.rooted.expected.json'), result_file)
+    expected = test_env.get_test_loc('info/basic.rooted.expected.json')
+    check_json_scan(expected, result_file, regen=False)
 
 
 def test_scan_info_returns_full_root():
@@ -143,7 +182,7 @@ def test_scan_info_returns_full_root():
     result_file = test_env.get_temp_file('json')
     args = ['--info', '--full-root', test_dir, '--json', result_file]
     run_scan_click(args)
-    result_data = json.loads(open(result_file, 'rb').read())
+    result_data = json.loads(open(result_file, read_mode).read())
     file_paths = [f['path'] for f in result_data['files']]
     assert 12 == len(file_paths)
     root = fileutils.as_posixpath(test_dir)
@@ -155,7 +194,7 @@ def test_scan_info_returns_correct_full_root_with_single_file():
     result_file = test_env.get_temp_file('json')
     args = ['--info', '--full-root', test_file, '--json', result_file]
     run_scan_click(args)
-    result_data = json.loads(open(result_file, 'rb').read())
+    result_data = json.loads(open(result_file, read_mode).read())
     files = result_data['files']
     # we have a single file
     assert len(files) == 1
@@ -169,9 +208,11 @@ def test_scan_info_returns_does_not_strip_root_with_single_file():
     result_file = test_env.get_temp_file('json')
     args = ['--info', '--strip-root', test_file, '--json', result_file]
     run_scan_click(args)
-    check_json_scan(test_env.get_test_loc('single/iproute.expected.json'), result_file, remove_file_date=True)
+    expected = test_env.get_test_loc('single/iproute.expected.json')
+    check_json_scan(expected, result_file, remove_file_date=True, regen=False)
 
 
+@pytest.mark.scanslow
 def test_scan_info_license_copyrights():
     test_dir = test_env.extract_test_tar('info/basic.tgz')
     result_file = test_env.get_temp_file('json')
@@ -185,7 +226,8 @@ def test_scan_noinfo_license_copyrights_with_root():
     result_file = test_env.get_temp_file('json')
     args = ['--email', '--url', '--license', '--copyright', test_dir, '--json', result_file]
     run_scan_click(args)
-    check_json_scan(test_env.get_test_loc('info/all.rooted.expected.json'), result_file, regen=False)
+    expected = test_env.get_test_loc('info/all.rooted.expected.json')
+    check_json_scan(expected, result_file, regen=False)
 
 
 def test_scan_email_url_info():
@@ -193,7 +235,8 @@ def test_scan_email_url_info():
     result_file = test_env.get_temp_file('json')
     args = ['--email', '--url', '--info', '--strip-root', test_dir, '--json', result_file]
     run_scan_click(args)
-    check_json_scan(test_env.get_test_loc('info/email_url_info.expected.json'), result_file)
+    expected = test_env.get_test_loc('info/email_url_info.expected.json')
+    check_json_scan(expected, result_file, regen=False)
 
 
 def test_scan_should_not_fail_on_faulty_pdf_or_pdfminer_bug_but_instead_keep_trucking_with_json():
@@ -201,38 +244,53 @@ def test_scan_should_not_fail_on_faulty_pdf_or_pdfminer_bug_but_instead_keep_tru
     result_file = test_env.get_temp_file('test.json')
     args = ['--copyright', '--strip-root', test_file, '--json', result_file]
     result = run_scan_click(args, expected_rc=0)
-    check_json_scan(test_env.get_test_loc('failing/patchelf.expected.json'), result_file, regen=False)
+    expected = test_env.get_test_loc('failing/patchelf.expected.json')
+    check_json_scan(expected, result_file, regen=False)
     assert 'Some files failed to scan' not in result.output
     assert 'patchelf.pdf' not in result.output
 
 
-def test_scan_with_errors_always_includes_full_traceback():
+def test_scan_with_timeout_errors():
     test_file = test_env.get_test_loc('failing/patchelf.pdf')
     result_file = test_env.get_temp_file('test.json')
-    args = ['--copyright', '--timeout', '0.000001', '--verbose',
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '--timeout', '0.01', '--verbose',
             test_file, '--json', result_file]
     result = run_scan_click(args, expected_rc=1)
     assert 'ERROR: Processing interrupted: timeout' in result.output
     assert 'patchelf.pdf' in result.output
     result_json = json.loads(open(result_file).read())
-    assert result_json['files'][0]['scan_errors'][0].startswith('ERROR: for scanner: copyrights')
+    assert result_json['files'][0]['scan_errors'][0].startswith('ERROR: for scanner: emails')
     assert result_json['headers'][0]['errors']
 
 
-def test_failing_scan_return_proper_exit_code():
+def test_scan_with_errors_always_includes_full_traceback():
     test_file = test_env.get_test_loc('failing/patchelf.pdf')
     result_file = test_env.get_temp_file('test.json')
-    args = ['--copyright', '--timeout', '0.000001',
+    # we use a short timeout and a --test-error-mode --email scan to simulate an error
+    args = ['-e', '--test-error-mode', '--verbose',
             test_file, '--json', result_file]
+    result = run_scan_click(args, expected_rc=1)
+    assert 'ScancodeError: Triggered email failure' in result.output
+    assert 'patchelf.pdf' in result.output
+    result_json = json.loads(open(result_file).read())
+    assert result_json['files'][0]['scan_errors'][0].startswith('ERROR: for scanner: emails')
+    assert result_json['headers'][0]['errors']
+
+
+def test_failing_scan_return_proper_exit_code_on_failure():
+    test_file = test_env.get_test_loc('failing/patchelf.pdf')
+    result_file = test_env.get_temp_file('test.json')
+    args = ['-e', '--test-error-mode', test_file, '--json', result_file]
     run_scan_click(args, expected_rc=1)
 
 
+@pytest.mark.xfail(py2, reason='May fail on Python 2 py2')
 def test_scan_should_not_fail_on_faulty_pdf_or_pdfminer_bug_but_instead_report_errors_and_keep_trucking_with_html():
     test_file = test_env.get_test_loc('failing/patchelf.pdf')
     result_file = test_env.get_temp_file('test.html')
-    args = ['--copyright', '--timeout', '0.000001',
-            test_file, '--html', result_file]
-    run_scan_click(args, expected_rc=1)
+    args = ['--copyright', '--timeout', '1', test_file, '--html', result_file]
+    run_scan_click(args)
 
 
 def test_scan_license_should_not_fail_with_output_to_html_and_json():
@@ -247,12 +305,12 @@ def test_scan_license_should_not_fail_with_output_to_html_and_json():
     assert 'Object of type License is not JSON serializable' not in result.output
 
 
+@pytest.mark.xfail(reason='May fail on Python 2 py2')
 def test_scan_should_not_fail_on_faulty_pdf_or_pdfminer_bug_but_instead_report_errors_and_keep_trucking_with_html_app():
     test_file = test_env.get_test_loc('failing/patchelf.pdf')
     result_file = test_env.get_temp_file('test.app.html')
-    args = ['--copyright', '--timeout', '0.000001',
-            test_file, '--html-app', result_file]
-    run_scan_click(args, expected_rc=1)
+    args = ['--copyright', '--timeout', '1', test_file, '--html-app', result_file]
+    run_scan_click(args)
 
 
 def test_scan_works_with_multiple_processes():
@@ -268,7 +326,7 @@ def test_scan_works_with_multiple_processes():
     run_scan_click(args)
     res1 = json.loads(open(result_file_1).read())
     res3 = json.loads(open(result_file_3).read())
-    assert sorted(res1['files']) == sorted(res3['files'])
+    assert sorted(res1['files'], key=lambda x: tuple(x.items())) == sorted(res3['files'], key=lambda x: tuple(x.items()))
 
 
 def test_scan_works_with_no_processes_in_threaded_mode():
@@ -285,7 +343,7 @@ def test_scan_works_with_no_processes_in_threaded_mode():
     run_scan_click(args)
     res0 = json.loads(open(result_file_0).read())
     res1 = json.loads(open(result_file_1).read())
-    assert sorted(res0['files']) == sorted(res1['files'])
+    assert sorted(res0['files'], key=lambda x: tuple(x.items())) == sorted(res1['files'], key=lambda x: tuple(x.items()))
 
 
 def test_scan_works_with_no_processes_non_threaded_mode():
@@ -302,46 +360,35 @@ def test_scan_works_with_no_processes_non_threaded_mode():
     run_scan_click(args)
     res0 = json.loads(open(result_file_0).read())
     res1 = json.loads(open(result_file_1).read())
-    assert sorted(res0['files']) == sorted(res1['files'])
+    assert sorted(res0['files'], key=lambda x: tuple(x.items())) == sorted(res1['files'], key=lambda x: tuple(x.items()))
 
 
 def test_scan_works_with_multiple_processes_and_timeouts():
-    # this contains test files with a lot of copyrights that should
-    # take more thant timeout to scan
-    test_dir = test_env.get_test_loc('timeout', copy=True)
-    # add some random bytes to the test files to ensure that the license results will
-    # not be cached
-    import time, random
-    for tf in fileutils.resource_iter(test_dir, with_dirs=False):
-        with open(tf, 'ab') as tfh:
-            tfh.write(
-                '(c)' + str(time.time()) + repr([random.randint(0, 10 ** 6) for _ in range(10000)]) + '(c)')
+    test_dir = test_env.get_test_loc('timeout')
 
     result_file = test_env.get_temp_file('json')
 
-    args = ['--copyright', '--processes', '2', '--timeout', '0.000001',
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['--email', '--processes', '2',
+            '--timeout', '0.01',
+            # this will guarantee that an email scan takes at least one second
+            '--test-slow-mode',
             '--strip-root', test_dir, '--json', result_file]
     run_scan_click(args, expected_rc=1)
 
     expected = [
         [(u'path', u'test1.txt'),
          (u'type', u'file'),
-         (u'authors', []),
-         (u'copyrights', []),
-         (u'holders', []),
-         (u'scan_errors', [u'ERROR: for scanner: copyrights:\nERROR: Processing interrupted: timeout after 0 seconds.'])],
+         (u'emails', []),
+         (u'scan_errors', [u'ERROR: for scanner: emails:\nERROR: Processing interrupted: timeout after 0 seconds.'])],
         [(u'path', u'test2.txt'),
          (u'type', u'file'),
-         (u'authors', []),
-         (u'copyrights', []),
-         (u'holders', []),
-         (u'scan_errors', [u'ERROR: for scanner: copyrights:\nERROR: Processing interrupted: timeout after 0 seconds.'])],
+         (u'emails', []),
+         (u'scan_errors', [u'ERROR: for scanner: emails:\nERROR: Processing interrupted: timeout after 0 seconds.'])],
         [(u'path', u'test3.txt'),
          (u'type', u'file'),
-         (u'authors', []),
-         (u'copyrights', []),
-         (u'holders', []),
-         (u'scan_errors', [u'ERROR: for scanner: copyrights:\nERROR: Processing interrupted: timeout after 0 seconds.'])]
+         (u'emails', []),
+         (u'scan_errors', [u'ERROR: for scanner: emails:\nERROR: Processing interrupted: timeout after 0 seconds.'])]
     ]
 
     result_json = json.loads(open(result_file).read(), object_pairs_hook=OrderedDict)
@@ -352,7 +399,7 @@ def check_scan_does_not_fail_when_scanning_unicode_files_and_paths(verbosity):
     test_dir = test_env.get_test_loc(u'unicodepath/uc')
     result_file = test_env.get_temp_file('json')
 
-    if on_linux:
+    if on_linux and py2:
         test_dir = fsencode(test_dir)
         result_file = fsencode(result_file)
 
@@ -361,12 +408,15 @@ def check_scan_does_not_fail_when_scanning_unicode_files_and_paths(verbosity):
             result_file] + ([verbosity] if verbosity else [])
     results = run_scan_click(args)
 
-    # the paths for each OS end up encoded differently.
+    # the paths for each OS ends up encoded differently.
     # See for details:
     # https://github.com/nexB/scancode-toolkit/issues/390
     # https://github.com/nexB/scancode-toolkit/issues/688
+    # https://github.com/nexB/scancode-toolkit/issues/1635
 
-    if on_linux:
+    if on_macos_14_or_higher:
+        expected = 'unicodepath/unicodepath.expected-mac14.json' + verbosity
+    elif on_linux:
         expected = 'unicodepath/unicodepath.expected-linux.json' + verbosity
     elif on_mac:
         expected = 'unicodepath/unicodepath.expected-mac.json' + verbosity
@@ -392,7 +442,7 @@ def test_scan_does_not_fail_when_scanning_unicode_files_and_paths_quiet():
     assert not result.output
 
 
-@skipIf(on_windows, 'Python tar cannot extract these files on Windows')
+@pytest.mark.skipif(on_windows, reason='Python tar cannot extract these files on Windows')
 def test_scan_does_not_fail_when_scanning_unicode_test_files_from_express():
 
     # On Windows, Python tar cannot extract these files. Other
@@ -401,7 +451,12 @@ def test_scan_does_not_fail_when_scanning_unicode_test_files_from_express():
     # to test this on Windows at all. Extractcode works fine, but does
     # rename the problematic files.
 
-    test_dir = test_env.extract_test_tar_raw(b'unicode_fixtures.tar.gz')
+    test_path = u'unicode_fixtures.tar.gz'
+
+    if on_linux and py2:
+        test_path = b'unicode_fixtures.tar.gz'
+
+    test_dir = test_env.extract_test_tar_raw(test_path)
     test_dir = fsencode(test_dir)
 
     args = ['-n0', '--info', '--license', '--copyright', '--package', '--email',
@@ -455,10 +510,10 @@ def test_scan_can_return_matched_license_text():
     result_file = test_env.get_temp_file('json')
     args = ['--license', '--license-text', '--strip-root', test_file, '--json', result_file]
     run_scan_click(args)
-    check_json_scan(test_env.get_test_loc(expected_file), result_file)
+    check_json_scan(test_env.get_test_loc(expected_file), result_file, regen=False)
 
 
-@skipIf(on_windows, 'This test cannot run on windows as these are not legal file names.')
+@pytest.mark.skipif(on_windows, reason='This test cannot run on windows as these are not legal file names.')
 def test_scan_can_handle_weird_file_names():
     test_dir = test_env.extract_test_tar('weird_file_name/weird_file_name.tar.gz')
     result_file = test_env.get_temp_file('json')
@@ -468,20 +523,18 @@ def test_scan_can_handle_weird_file_names():
 
     # Some info vary on each OS
     # See https://github.com/nexB/scancode-toolkit/issues/438 for details
-    if on_linux:
-        expected = 'weird_file_name/expected-linux.json'
-    elif on_mac:
-        expected = 'weird_file_name/expected-mac.json'
-    else:
-        raise Exception('Not a supported OS?')
+    expected = 'weird_file_name/expected-posix.json'
     check_json_scan(test_env.get_test_loc(expected), result_file, regen=False)
 
 
+@pytest.mark.skipif(on_macos_14_or_higher or (on_windows and py3),
+        reason='Cannot handle yet byte paths on macOS 10.14+. See https://github.com/nexB/scancode-toolkit/issues/1635'
+        ' Also this fails on Windows and Python 3')
 def test_scan_can_handle_non_utf8_file_names_on_posix():
     test_dir = test_env.extract_test_tar_raw('non_utf8/non_unicode.tgz')
     result_file = test_env.get_temp_file('json')
 
-    if on_linux:
+    if on_linux and py2:
         test_dir = fsencode(test_dir)
         result_file = fsencode(result_file)
 
@@ -497,8 +550,10 @@ def test_scan_can_handle_non_utf8_file_names_on_posix():
         expected = 'non_utf8/expected-linux.json'
     elif on_mac:
         expected = 'non_utf8/expected-mac.json'
-    elif on_windows:
-        expected = 'non_utf8/expected-win.json'
+    elif on_windows and py2:
+        expected = 'non_utf8/expected-win-py2.json'
+    elif on_windows and py3:
+        expected = 'non_utf8/expected-win-py3.json'
 
     check_json_scan(test_env.get_test_loc(expected), result_file, regen=False)
 
@@ -515,8 +570,9 @@ def test_scan_can_run_from_other_directory():
 
 def test_scan_logs_errors_messages_not_verbosely_on_stderr():
     test_file = test_env.get_test_loc('errors/many_copyrights.c')
-    # we use very short timeouts to simulate an error
-    args = ['-c', '-n', '0', '--timeout', '0.0001', test_file, '--json', '-']
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '-n', '0', '--timeout', '0.0001',
+            test_file, '--json', '-']
     _rc, stdout, stderr = run_scan_plain(args, expected_rc=1)
     assert 'Some files failed to scan properly:' in stderr
     assert 'Path: many_copyrights.c' in stderr
@@ -526,8 +582,9 @@ def test_scan_logs_errors_messages_not_verbosely_on_stderr():
 
 def test_scan_logs_errors_messages_not_verbosely_on_stderr_with_multiprocessing():
     test_file = test_env.get_test_loc('errors/many_copyrights.c')
-    # we use very short timeouts to simulate an error
-    args = ['-c', '-n', '2', '--timeout', '0.0001', test_file, '--json', '-']
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '-n', '2', '--timeout', '0.0001',
+            test_file, '--json', '-']
     _rc, stdout, stderr = run_scan_plain(args, expected_rc=1)
     assert 'Some files failed to scan properly:' in stderr
     assert 'Path: many_copyrights.c' in stderr
@@ -537,23 +594,25 @@ def test_scan_logs_errors_messages_not_verbosely_on_stderr_with_multiprocessing(
 
 def test_scan_logs_errors_messages_verbosely():
     test_file = test_env.get_test_loc('errors/many_copyrights.c')
-    # we use very short timeouts to simulate an error
-    args = ['-c', '--verbose', '-n', '0', '--timeout', '0.0001', test_file, '--json', '-']
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '--verbose', '-n', '0', '--timeout', '0.0001',
+            test_file, '--json', '-']
     _rc, stdout, stderr = run_scan_plain(args, expected_rc=1)
     assert 'Some files failed to scan properly:' in stderr
     assert 'Path: many_copyrights.c' in stderr
 
     assert 'ERROR: Processing interrupted: timeout after 0 seconds.' in stdout
-    assert 'ERROR: for scanner: copyrights:' in stdout
+    assert 'ERROR: for scanner: emails:' in stdout
 
     assert 'ERROR: Processing interrupted: timeout after 0 seconds.' in stderr
-    assert 'ERROR: for scanner: copyrights:' in stderr
+    assert 'ERROR: for scanner: emails:' in stderr
 
 
 def test_scan_logs_errors_messages_verbosely_with_verbose_and_multiprocessing():
     test_file = test_env.get_test_loc('errors/many_copyrights.c')
-    # we use very short timeouts to simulate an error
-    args = ['-c', '--verbose', '-n', '2', '--timeout', '0.0001', test_file, '--json', '-']
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '--verbose', '-n', '2', '--timeout', '0.0001',
+            test_file, '--json', '-']
     _rc, stdout, stderr = run_scan_plain(args, expected_rc=1)
     assert 'Some files failed to scan properly:' in stderr
     assert 'Path: many_copyrights.c' in stderr
@@ -561,6 +620,7 @@ def test_scan_logs_errors_messages_verbosely_with_verbose_and_multiprocessing():
     assert 'ERROR: Processing interrupted: timeout after 0 seconds.' in stderr
 
 
+@pytest.mark.scanslow
 def test_scan_does_not_report_errors_on_incorrect_package_manifest():
     test_file = test_env.get_test_loc('errors/broken_packages')
     args = ['-pi', '--verbose', '-n', '0', test_file, '--json', '-']
@@ -619,7 +679,7 @@ def test_scan_does_scan_php_composer():
     expected_file = test_env.get_test_loc('composer/composer.expected.json')
     result_file = test_env.get_temp_file('results.json')
     run_scan_click(['--package', test_file, '--json', result_file])
-    check_json_scan(expected_file, result_file)
+    check_json_scan(expected_file, result_file, regen=False)
 
 
 def test_scan_does_scan_rpm():
@@ -634,7 +694,7 @@ def test_scan_cli_help(regen=False):
     expected_file = test_env.get_test_loc('help/help.txt')
     result = run_scan_click(['--help'])
     if regen:
-        with open(expected_file, 'wb') as ef:
+        with io.open(expected_file, 'w', encoding='utf-8') as ef:
             ef.write(result.output)
     assert open(expected_file).read() == result.output
 
@@ -673,6 +733,18 @@ def test_scan_errors_out_with_conflicting_verbosity_options():
             'these options at a time.') in result.output
 
 
+def test_scan_valid_duration_field_in_json_output_headers():
+    test_file = test_env.get_test_loc('license_text/test.txt')
+    result_file = test_env.get_temp_file('results.json')
+    args = ['--json', result_file, test_file]
+    run_scan_click(args)
+    with open(result_file) as result:
+        headers = json.loads(result.read())['headers']
+    assert headers[0]['duration'] >= 0
+
+
+@pytest.mark.scanslow
+@pytest.mark.skipif(on_windows and py3, reason='Somehow this test fails for now on Python 3')
 def test_scan_with_timing_json_return_timings_for_each_scanner():
     test_dir = test_env.extract_test_tar('timing/basic.tgz')
     result_file = test_env.get_temp_file('json')
@@ -685,6 +757,8 @@ def test_scan_with_timing_json_return_timings_for_each_scanner():
     check_timings(expected, file_results)
 
 
+@pytest.mark.scanslow
+@pytest.mark.skipif(on_windows and py3, reason='Somehow this test fails for now on Python 3')
 def test_scan_with_timing_jsonpp_return_timings_for_each_scanner():
     test_dir = test_env.extract_test_tar('timing/basic.tgz')
     result_file = test_env.get_temp_file('json')
@@ -713,8 +787,9 @@ def check_timings(expected, file_results):
             assert timing
 
 
+@pytest.mark.scanslow
 def test_summary_counts_when_using_disk_cache():
-    test_file = test_env.get_test_loc('resource/samples')
+    test_file = test_env.get_test_loc('summaries/counts')
     result_file = test_env.get_temp_file('json')
     args = ['--info', '-n', '-1', '--max-in-memory', '-1', test_file, '--json', result_file]
     result = run_scan_click(args, expected_rc=0)
@@ -722,45 +797,71 @@ def test_summary_counts_when_using_disk_cache():
 
 
 def test_scan_should_not_fail_with_low_max_in_memory_setting_when_ignoring_files():
-    test_file = test_env.get_test_loc('resource/client')
+    test_file = test_env.get_test_loc('summaries/client')
     result_file = test_env.get_temp_file('json')
     args = ['--info', '-n', '-1', '--ignore', '*.gif', '--max-in-memory=1', test_file, '--json', result_file]
     run_scan_click(args, expected_rc=0)
 
 
-def test_display_summary_edge_case_scan_time_zero():
-    from cStringIO import StringIO
+def test_get_displayable_summary():
+    from scancode.cli import get_displayable_summary
+    from commoncode.resource import Codebase
+
+    # Set up test codebase
+    test_codebase = test_env.get_test_loc('summaries/client')
+    codebase = Codebase(test_codebase, strip_root=True)
+    codebase.timings['scan'] = 0
+    scan_names = 'foo, bar, baz'
+    processes = 23
+    errors = ['failed to scan ABCD']
+    results = get_displayable_summary(codebase, scan_names, processes, errors)
+    expected = (
+        [u'Some files failed to scan properly:', u'failed to scan ABCD'],
+        [
+            u'Summary:        foo, bar, baz with 23 process(es)',
+            u'Errors count:   1',
+            u'Scan Speed:     0.00 files/sec. ',
+            u'Initial counts: 0 resource(s): 0 file(s) and 0 directorie(s) ',
+            u'Final counts:   0 resource(s): 0 file(s) and 0 directorie(s) ',
+            u'Timings:',
+            u'  scan_start: None',
+            u'  scan_end:   None']
+    )
+    assert expected == results
+
+
+@pytest.mark.xfail  # ('weird test with TTY interactions that need to be revisited')
+def test_display_summary_edge_case_scan_time_zero_should_not_fail():
+    from io import StringIO
     import sys
 
     from scancode.cli import display_summary
-    from scancode.resource import Codebase
+    from commoncode.resource import Codebase
 
     # Set up test codebase
-    test_codebase = test_env.get_test_loc('resource/client')
+    test_codebase = test_env.get_test_loc('summaries/client')
     codebase = Codebase(test_codebase, strip_root=True)
     codebase.timings['scan'] = 0
-    scan_names = ''
-    processes = 0
-    verbose = False
-    errors = []
-    # Redirect summary output from `stderr` to `result`
-    result = StringIO()
-    sys.stderr = result
+    scan_names = 'foo, bar, baz'
+    processes = 23
+    errors = ['failed to scan ABCD']
+    try:
+        # Redirect summary output from `stderr` to `result`
+        result = StringIO()
+        sys.stderr = result
 
-    # Output from `display_summary` will be in `result`
-    display_summary(codebase, scan_names, processes, errors, verbose)
-
-    # Set `stderr` back
-    sys.stderr = sys.__stderr__
-
-    # No exception should be thrown and this assertion should pass
-    assert 'Scan Speed:     0.00 files/sec.' in result.getvalue()
+        # Output from `display_summary` will be in `result`
+        display_summary(codebase, scan_names, processes, errors)
+    finally:
+        # Set `stderr` back
+        sys.stderr = sys.__stderr__
 
 
 def test_check_error_count():
     test_dir = test_env.get_test_loc('failing')
     result_file = test_env.get_temp_file('json')
-    args = ['--email', '--url', '--timeout', '0.000001',
+    # we use a short timeout and a --test-slow-mode --email scan to simulate an error
+    args = ['-e', '--test-slow-mode', '--timeout', '0.1',
             test_dir, '--json', result_file]
     result = run_scan_click(args, expected_rc=1)
     output = result.output
@@ -815,3 +916,35 @@ def test_scan_errors_out_without_an_input_path():
     args = ['--json-pp', '-']
     result = run_scan_click(args, expected_rc=2)
     assert 'Error: Invalid value: At least one input path is required.' in result.output
+
+
+def test_merge_multiple_scans():
+    test_file_1 = test_env.get_test_loc('merge_scans/sample.json')
+    test_file_2 = test_env.get_test_loc('merge_scans/thirdparty.json')
+    result_file = test_env.get_temp_file('json')
+    args = ['--from-json', test_file_1, '--from-json', test_file_2, '--json', result_file]
+    run_scan_click(args, expected_rc=0)
+    expected = test_env.get_test_loc('merge_scans/expected.json')
+    with open(expected, read_mode) as f:
+        expected_files = json.loads(f.read())['files']
+    with open(result_file, read_mode) as f:
+        result_files = json.loads(f.read())['files']
+    assert expected_files == result_files
+
+
+def test_VirtualCodebase_output_with_from_json_is_same_as_original():
+    test_file = test_env.get_test_loc('virtual_idempotent/codebase.json')
+    result_file = test_env.get_temp_file('json')
+    args = ['--from-json', test_file, '--json-pp', result_file]
+    run_scan_click(args)
+    expected = load_json_result(test_file, remove_file_date=True)
+    results = load_json_result(result_file, remove_file_date=True)
+
+    expected.pop('summary', None)
+    results.pop('summary', None)
+
+    expected_headers = expected.pop('headers', [])
+    results_headers = results.pop('headers', [])
+
+    assert json.dumps(expected, indent=2) == json.dumps(results , indent=2)
+    assert len(results_headers) == len(expected_headers) + 1

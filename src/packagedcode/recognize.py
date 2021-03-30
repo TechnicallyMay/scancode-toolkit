@@ -37,6 +37,7 @@ from commoncode.fileutils import file_name
 from commoncode.fileutils import fsencode
 from commoncode.fileutils import splitext_name
 from commoncode.system import on_linux
+from commoncode.system import py2
 from packagedcode import PACKAGE_TYPES
 from typecode import contenttype
 
@@ -63,10 +64,10 @@ Recognize package manifests in files.
 """
 
 
-def recognize_package(location):
+def recognize_packages(location):
     """
-    Return a Package object if one was recognized for this `location` or None.
-    Raises Exceptions on errors.
+    Return a list of Package object if any packages were recognized for this
+    `location`, or None if there were no Packages found. Raises Exceptions on errors.
     """
 
     if not filetype.is_file(location):
@@ -81,24 +82,26 @@ def recognize_package(location):
     extension = extension.lower()
 
     if TRACE:
-        logger_debug('recognize_package: ftype:', ftype, 'mtype:', mtype,
+        logger_debug('recognize_packages: ftype:', ftype, 'mtype:', mtype,
                      'pygtype:', T.filetype_pygment,
                      'fname:', filename, 'ext:', extension)
 
+    recognized_packages = []
     for package_type in PACKAGE_TYPES:
         # Note: default to True if there is nothing to match against
         metafiles = package_type.metafiles
-        if on_linux:
+        if on_linux and py2:
             metafiles = (fsencode(m) for m in metafiles)
 
         if any(fnmatch.fnmatchcase(filename, metaf) for metaf in metafiles):
-            recognized = package_type.recognize(location)
-            if TRACE:logger_debug('recognize_package: metafile matching: recognized:', recognized)
-            if recognized and not recognized.license_expression:
-                # compute and set a normalized license expression
-                recognized.license_expression = recognized.compute_normalized_license()
-                if TRACE:logger_debug('recognize_package: recognized.license_expression:', recognized.license_expression)
-            return recognized
+            for recognized in package_type.recognize(location):
+                if TRACE:logger_debug('recognize_packages: metafile matching: recognized:', recognized)
+                if recognized and not recognized.license_expression:
+                    # compute and set a normalized license expression
+                    recognized.license_expression = recognized.compute_normalized_license()
+                    if TRACE:logger_debug('recognize_packages: recognized.license_expression:', recognized.license_expression)
+                recognized_packages.append(recognized)
+            return recognized_packages
 
         type_matched = False
         if package_type.filetypes:
@@ -111,7 +114,7 @@ def recognize_package(location):
         extension_matched = False
         extensions = package_type.extensions
         if extensions:
-            if on_linux:
+            if on_linux and py2:
                 extensions = (fsencode(e) for e in extensions)
 
             extensions = (e.lower() for e in extensions)
@@ -119,17 +122,19 @@ def recognize_package(location):
                                     for ext_pat in extensions)
 
         if type_matched and mime_matched and extension_matched:
-            if TRACE: logger_debug('recognize_package: all matching')
+            if TRACE: logger_debug('recognize_packages: all matching')
             try:
-                recognized = package_type.recognize(location)
-                # compute and set a normalized license expression
-                if recognized and not recognized.license_expression:
-                    recognized.license_expression = recognized.compute_normalized_license()
+                for recognized in package_type.recognize(location):
+                    # compute and set a normalized license expression
+                    if recognized and not recognized.license_expression:
+                        recognized.license_expression = recognized.compute_normalized_license()
+                    if TRACE: logger_debug('recognize_packages: recognized', recognized)
+                    recognized_packages.append(recognized)
             except NotImplementedError:
                 # build a plain package if recognize is not yet implemented
                 recognized = package_type()
+                if TRACE: logger_debug('recognize_packages: recognized', recognized)
+                recognized_packages.append(recognized)
+            return recognized_packages
 
-            if TRACE: logger_debug('recognize_package: recognized', recognized)
-            return recognized
-
-        if TRACE: logger_debug('recognize_package: no match for type:', package_type)
+        if TRACE: logger_debug('recognize_packages: no match for type:', package_type)

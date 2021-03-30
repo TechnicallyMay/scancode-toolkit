@@ -1,7 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# Copyright (c) 2015 nexB Inc. http://www.nexb.com/ - All rights reserved.
+# Copyright (c) nexB Inc. http://www.nexb.com/ - All rights reserved.
 #
+
+set -e
+
+if [[ "$OS" == "Windows_NT" ]]; then
+    echo "You seem to be running on Windows under Cygwin / MSYS(2), like e.g. Git for Windows Bash. This script does"
+    echo "not properly work in this scenario. As a Windows user, please run 'configure.bat' from a regular command"
+    echo "prompt instead."
+    exit 1
+fi
+
 ################################
 # change these variables to customize this script locally
 ################################
@@ -10,6 +20,12 @@ export TPP_DIR="thirdparty"
 
 # default configurations for dev
 CONF_DEFAULT="etc/conf/dev"
+
+if [[ "$CONF_DEFAULT" == "etc/conf/dev" ]]; then
+    export TPP_DIR_DEV="thirdparty/dev"
+fi
+
+
 #################################
 
 CFG_CMD_LINE_ARGS="$@"
@@ -21,7 +37,14 @@ fi
 
 CONFIGURE_ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-python2.7 "$CONFIGURE_ROOT_DIR/etc/configure.py" $CFG_CMD_LINE_ARGS
+if [[ "$PYTHON_EXE" == "" ]]; then
+    PYTHON_EXE=python
+fi
+
+$PYTHON_EXE "$CONFIGURE_ROOT_DIR/etc/configure.py" $CFG_CMD_LINE_ARGS
+
 if [ -f "$CONFIGURE_ROOT_DIR/bin/activate" ]; then
     source "$CONFIGURE_ROOT_DIR/bin/activate"
 fi
+
+set +e

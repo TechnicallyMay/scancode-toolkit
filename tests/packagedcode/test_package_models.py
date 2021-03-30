@@ -46,7 +46,7 @@ class TestModels(PackageTester):
             ('namespace', None),
             ('name', u'someAndroidPAcakge'),
             ('version', None),
-            ('qualifiers', None),
+            ('qualifiers', OrderedDict()),
             ('subpath', None),
             ('primary_language', u'Java'),
             ('description', None),
@@ -67,16 +67,17 @@ class TestModels(PackageTester):
             ('license_expression', None),
             ('declared_license', None),
             ('notice_text', None),
-            ('manifest_path', None),
+            ('root_path', None),
             ('dependencies', []),
             ('contains_source_code', None),
             ('source_packages', []),
+            ('extra_data', OrderedDict()),
             ('purl', u'pkg:android/someAndroidPAcakge'),
             ('repository_homepage_url', None),
             ('repository_download_url', None),
             ('api_data_url', None),
         ]
-        assert expected == package.to_dict().items()
+        assert expected == list(package.to_dict().items())
 
     def test_Package_simple(self):
         package = Package(
@@ -96,14 +97,33 @@ class TestModels(PackageTester):
         expected_loc = 'models/simple-expected.json'
         self.check_package(package, expected_loc, regen=False)
 
-    def test_Package_model_qualifiers_are_serialized_as_strings(self):
+    def test_Package_model_qualifiers_are_serialized_as_mappings(self):
         package = models.Package(
             type='maven',
             name='this',
             version='23',
             qualifiers=OrderedDict(this='that')
         )
-        assert 'this=that' == package.to_dict()['qualifiers']
+        assert OrderedDict(this='that') == package.to_dict()['qualifiers']
+
+    def test_Package_model_qualifiers_are_kept_as_mappings(self):
+        package = models.Package(
+            type='maven',
+            name='this',
+            version='23',
+            qualifiers=OrderedDict(this='that')
+        )
+        assert OrderedDict(this='that') == package.qualifiers
+
+    def test_Package_model_qualifiers_are_converted_to_mappings(self):
+        package = models.Package(
+            type='maven',
+            name='this',
+            version='23',
+            qualifiers='this=that'
+        )
+        assert OrderedDict(this='that') == package.qualifiers
+
 
     def test_Package_full(self):
         package = Package(
@@ -138,7 +158,7 @@ class TestModels(PackageTester):
             license_expression='apache-2.0',
             declared_license=u'apache-2.0',
             notice_text='licensed under the apacche 2.0 \nlicense',
-            manifest_path='package.json',
+            root_path='',
             dependencies=[
                 DependentPackage(
                   purl='pkg:maven/org.aspectj/aspectjtools',
@@ -164,3 +184,16 @@ class TestModels(PackageTester):
         )
         expected_loc = 'models/full-expected.json'
         self.check_package(package, expected_loc, regen=False)
+
+    def test_Package_get_package_resource_works_with_nested_packages_and_ignores(self):
+        from packagedcode import get_package_instance
+        from packagedcode import npm
+        from commoncode.resource import VirtualCodebase
+        scan_loc = self.get_test_loc('models/nested-npm-packages.json')
+        codebase = VirtualCodebase(scan_loc)
+        for resource in codebase.walk():
+            for package_data in resource.packages:
+                package = get_package_instance(package_data)
+                assert isinstance(package, npm.NpmPackage)
+                package_resources = list(package.get_package_resources(resource, codebase))
+                assert any(r.name == 'package.json' for r in package_resources), resource.path

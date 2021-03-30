@@ -23,22 +23,37 @@
 #  ScanCode is a free software code scanning tool from nexB Inc. and others.
 #  Visit https://github.com/nexB/scancode-toolkit/ for support and download.
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import unicode_literals
 
-import re
 import os
+import re
+from unittest.case import expectedFailure
+
+import pytest
 
 from commoncode.testcase import FileBasedTesting
-
+from commoncode import compat
+from commoncode.system import py3
 from cluecode import finder
-from unittest.case import expectedFailure
+from cluecode.finder import find
+from cluecode.finder import urls_regex
 
 
 def find_emails_tester(lines_or_location, with_lineno=False, unique=True):
+    return _find_tester(finder.find_emails, lines_or_location, with_lineno, unique)
+
+
+def find_urls_tester(lines_or_location, with_lineno=False, unique=True):
+    return _find_tester(finder.find_urls, lines_or_location, with_lineno, unique)
+
+
+def _find_tester(func, lines_or_location, with_lineno=False, unique=True):
     """
-    Helper function for testing emails with or without line numbers.
+    Helper function for testing URLs or emails with or without line numbers.
     """
-    result = list(finder.find_emails(lines_or_location, unique))
+    result = list(func(lines_or_location, unique))
     if not with_lineno:
         result = [val for val, _ln in result]
     return result
@@ -167,15 +182,21 @@ class TestEmail(FileBasedTesting):
         result = find_emails_tester(test_file)
         assert expected == result
 
-
-def find_urls_tester(lines_or_location, with_lineno=False, unique=True):
-    """
-    Helper function for testing URLs with or without line numbers.
-    """
-    result = list(finder.find_urls(lines_or_location, unique))
-    if not with_lineno:
-        result = [val for val, _ln in result]
-    return result
+    def test_emails_for_ignored_hosts(self):
+        test_string = '''
+        Perhaps an email host that should be ignored from ignored_hosts
+        would be of the form <abc@something.com>. Another possible
+        domain name that the filter should be ignored would probably be
+        <xyz@any.com>. However, an email such as <efg@many.org> should
+        not be filtered as spam.
+        Adding more test cases, how about <abc@example.com> or a slightly
+        more different email such as <diff@xyz@other.com>.
+        '''.splitlines(False)
+        expected = [
+            u'efg@many.org'
+        ]
+        result = find_emails_tester(test_string, with_lineno=False)
+        assert expected == result
 
 
 class TestUrl(FileBasedTesting):
@@ -252,9 +273,8 @@ class TestUrl(FileBasedTesting):
             u'http://alaphalinu.org/isc',
             u'http://alaphalinu.org/isc.txt',
             u'http://alaphalinu.org/isc.html',
-            u'http://alaphalinu.org/somedir',
-            u'http://kernelnewbies.org/',
             u'http://alaphalinu.org/somedir/',
+            u'http://kernelnewbies.org/',
         ]
         result = find_urls_tester(lines)
         assert expected == result
@@ -640,13 +660,11 @@ class TestUrl(FileBasedTesting):
             h://test
             http:// shouldfail.com
             :// should fail
-            http://-error-.invalid/
             http://-a.b.co
             http://0.0.0.0
             http://10.1.1.0
             http://10.1.1.255
             http://224.1.1.1
-            http://1.1.1.1.1
             http://3628126748
             http://10.1.1.1
         '''
@@ -667,32 +685,101 @@ class TestUrl(FileBasedTesting):
     def test_misc_invalid_urls_that_are_still_detected_and_may_not_be_really_invalid(self):
         # set of non URLs from https://mathiasbynens.be/demo/url-regex
         urls = u'''
-            ftps://foo.bar/
             http://a.b--c.de/
             http://a.b-.co
             http://123.123.123
+        '''
+        for test in urls.split():
+            result = [val for val, _ln in finder.find_urls([test])]
+            assert result in ([test] , [test + u'/'])
+
+    @pytest.mark.skipif(py3, reason='url-cpp behaves differently')
+    def test_misc_invalid_urls_that_are_still_detected_and_may_not_be_really_invalidPpy2(self):
+        # set of non URLs from https://mathiasbynens.be/demo/url-regex
+        urls = u'''
+            http://www.foo.bar./
+            ftps://foo.bar/
+        '''
+        for test in urls.split():
+            result = [val for val, _ln in finder.find_urls([test])]
+            assert result in ([test] , [test + u'/'])
+
+    @pytest.mark.skipif(not py3, reason='url-cpp behaves differently')
+    def test_misc_invalid_urls_that_are_still_detected_and_normalized(self):
+        # set of non URLs from https://mathiasbynens.be/demo/url-regex
+        urls = u'''
             http://www.foo.bar./
         '''
         for test in urls.split():
             result = [val for val, _ln in finder.find_urls([test])]
-            assert ([test] == result or [test + u'/'] == result)
+            assert [test] == result
+
+    @pytest.mark.skipif(not py3, reason='url-cpp behaves differently')
+    def test_invalid_urls_are_not_detected(self):
+        # set of non URLs from https://mathiasbynens.be/demo/url-regex
+        urls = u'''
+            http://1.1.1.1.1
+            http://-error-.invalid/
+        '''
+        for test in urls.split():
+            result = [val for val, _ln in finder.find_urls([test])]
+            assert [] == result
 
     def test_misc_invalid_urls_that_should_not_be_detected(self):
         # At least per this set of non URLs from https://mathiasbynens.be/demo/url-regex
         urls = u'''
             http://foo.bar?q=Spaces should be encoded
             http://foo.bar/foo(bar)baz quux
-            ftps://foo.bar/
             http://a.b--c.de/
         '''
         for test in (u.strip() for u in urls.splitlines(False) if u and u.strip()):
             result = [val for val, _ln in finder.find_urls([test])]
             assert result, test
 
+    @pytest.mark.skipif(py3, reason='url-cpp behaves differently')
+    def test_misc_invalid_urls_that_should_not_be_detected_2(self):
+        # At least per this set of non URLs from https://mathiasbynens.be/demo/url-regex
+        urls = u'''
+            ftps://foo.bar/
+        '''
+        for test in (u.strip() for u in urls.splitlines(False) if u and u.strip()):
+            result = [val for val, _ln in finder.find_urls([test])]
+            assert result, test
+
+
     def test_common_xml_ns_url_should_not_be_detected(self):
         url = u"http://www.w3.org/XML/1998/namespace%00%00%00%00xmlns%00%00%00http:/www.w3.org/2000/xmlns/%00%00%00ixmlElement_setTagName%00%00ixmlElement_findAttributeNode%00%00%00#document#text#cdata-sectionnnMap"
         result = [val for val, _ln in finder.find_urls([url])]
         assert not result
+
+    def test_find_urls_in_go_does_not_crash_with_unicode_error(self):
+        test_file = self.get_test_loc('finder/url/verify.go')
+        expected = [
+            'https://tools.ietf.org/html/rfc5280#section-4.2.1.6',
+            'https://tools.ietf.org/html/rfc2821#section-4.1.2',
+            'https://tools.ietf.org/html/rfc2822#section-4',
+            'https://tools.ietf.org/html/rfc2822#section-3.2.4',
+            'https://tools.ietf.org/html/rfc3696#section-3',
+            'https://tools.ietf.org/html/rfc5280#section-4.2.1.10',
+            'https://tools.ietf.org/html/rfc6125#appendix-B.2'
+        ]
+        result = find_urls_tester(test_file)
+        assert expected == result
+
+    def test_find_urls_does_not_crash_on_mojibake_bytes(self):
+        lines = [
+            '    // as defined in https://tools.ietf.org/html/rfc2821#section-4.1.2”.',
+        ]
+        expected = ['https://tools.ietf.org/html/rfc2821#section-4.1.2']
+        result = find_urls_tester(lines)
+        assert expected == result
+
+    def test_find_in_go_does_not_crash_with_unicode_error(self):
+        test_file = self.get_test_loc('finder/url/verify.go')
+        patterns = [('urls', urls_regex(),)]
+        for _key, url, _line, _lineno in find(test_file, patterns):
+            assert type(url) == compat.unicode
+
 
 class TestSearch(FileBasedTesting):
     test_data_dir = os.path.join(os.path.dirname(__file__), 'data')

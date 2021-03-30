@@ -30,8 +30,9 @@ from functools import partial
 from commoncode.fileset import is_included
 from plugincode.pre_scan import PreScanPlugin
 from plugincode.pre_scan import pre_scan_impl
-from scancode import CommandLineOption
-from scancode import PRE_SCAN_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import PRE_SCAN_GROUP
+from commoncode import compat
 
 
 # Tracing flags
@@ -53,7 +54,7 @@ if TRACE:
 
     def logger_debug(*args):
         return logger.debug(
-            ' '.join(isinstance(a, unicode) and a or repr(a) for a in args))
+            ' '.join(isinstance(a, compat.unicode) and a or repr(a) for a in args))
 
 
 @pre_scan_impl
@@ -63,13 +64,13 @@ class ProcessIgnore(PreScanPlugin):
     """
 
     options = [
-        CommandLineOption(('--ignore',),
+        PluggableCommandLineOption(('--ignore',),
            multiple=True,
            metavar='<pattern>',
            help='Ignore files matching <pattern>.',
            sort_order=10,
            help_group=PRE_SCAN_GROUP),
-        CommandLineOption(('--include',),
+        PluggableCommandLineOption(('--include',),
            multiple=True,
            metavar='<pattern>',
            help='Include files matching <pattern>.',

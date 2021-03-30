@@ -31,9 +31,9 @@ import os
 
 import click
 click.disable_unicode_literals_warning = True
+import pytest
 
 from commoncode.testcase import FileDrivenTesting
-
 from scancode.cli_test_utils import check_json_scan
 from scancode.cli_test_utils import run_scan_click
 
@@ -54,6 +54,43 @@ def test_license_option_reports_license_expressions():
     check_json_scan(test_loc, result_file, regen=False)
 
 
+def test_license_option_reports_license_texts():
+    test_dir = test_env.get_test_loc('plugin_license/text/scan', copy=True)
+    result_file = test_env.get_temp_file('json')
+    args = ['--license', '--license-text', '--strip-root', test_dir, '--json', result_file, '--verbose']
+    run_scan_click(args)
+    test_loc = test_env.get_test_loc('plugin_license/text/scan.expected.json')
+    check_json_scan(test_loc, result_file, regen=False)
+
+
+def test_license_option_reports_license_texts_diag():
+    test_dir = test_env.get_test_loc('plugin_license/text/scan', copy=True)
+    result_file = test_env.get_temp_file('json')
+    args = ['--license', '--license-text', '--license-text-diagnostics', '--strip-root', test_dir, '--json', result_file, '--verbose']
+    run_scan_click(args)
+    test_loc = test_env.get_test_loc('plugin_license/text/scan-diag.expected.json')
+    check_json_scan(test_loc, result_file, regen=False)
+
+
+def test_license_option_reports_license_texts_long_lines():
+    test_dir = test_env.get_test_loc('plugin_license/text_long_lines/scan', copy=True)
+    result_file = test_env.get_temp_file('json')
+    args = ['--license', '--license-text', '--strip-root', test_dir, '--json', result_file, '--verbose']
+    run_scan_click(args)
+    test_loc = test_env.get_test_loc('plugin_license/text_long_lines/scan.expected.json')
+    check_json_scan(test_loc, result_file, regen=False)
+
+
+def test_license_option_reports_license_texts_diag_long_lines():
+    test_dir = test_env.get_test_loc('plugin_license/text_long_lines/scan', copy=True)
+    result_file = test_env.get_temp_file('json')
+    args = ['--license', '--license-text', '--license-text-diagnostics', '--strip-root', test_dir, '--json', result_file, '--verbose']
+    run_scan_click(args)
+    test_loc = test_env.get_test_loc('plugin_license/text_long_lines/scan-diag.expected.json')
+    check_json_scan(test_loc, result_file, regen=False)
+
+
+@pytest.mark.scanslow
 def test_scan_license_with_url_template():
     test_dir = test_env.get_test_loc('plugin_license/license_url', copy=True)
     result_file = test_env.get_temp_file('json')
@@ -63,3 +100,21 @@ def test_scan_license_with_url_template():
     run_scan_click(args)
     check_json_scan(test_loc, result_file)
 
+
+@pytest.mark.scanslow
+def test_detection_does_not_timeout_on_sqlite3_amalgamation():
+    test_dir = test_env.extract_test_tar('plugin_license/sqlite/sqlite.tgz')
+    result_file = test_env.get_temp_file('json')
+    expected_file = test_env.get_test_loc('plugin_license/sqlite/sqlite.expected.json')
+    # we use the default 120 seconds timeout
+    run_scan_click(['-l', '--license-text', '--json-pp', result_file, test_dir])
+    check_json_scan(expected_file, result_file, remove_file_date=True, regen=False)
+
+
+@pytest.mark.scanslow
+def test_detection_is_correct_in_legacy_npm_package_json():
+    test_dir = test_env.get_test_loc('plugin_license/package/package.json')
+    result_file = test_env.get_temp_file('json')
+    expected_file = test_env.get_test_loc('plugin_license/package/package.expected.json')
+    run_scan_click(['-lp', '--json-pp', result_file, test_dir])
+    check_json_scan(expected_file, result_file, remove_file_date=True, regen=False)

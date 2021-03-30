@@ -31,10 +31,19 @@ from collections import OrderedDict
 import io
 import json
 import os
+import time
 
 from commoncode.system import on_linux
 from commoncode.system import on_windows
+from commoncode.system import py2
+from commoncode.system import py3
 from scancode_config import scancode_root_dir
+
+
+if py2:
+    mode = 'wb'
+if py3:
+    mode = 'w'
 
 
 def run_scan_plain(options, cwd=None, test_mode=True, expected_rc=0, env=None):
@@ -48,7 +57,10 @@ def run_scan_plain(options, cwd=None, test_mode=True, expected_rc=0, env=None):
     if test_mode and '--test-mode' not in options:
         options.append('--test-mode')
 
-    scmd = b'scancode' if on_linux else 'scancode'
+    if on_linux and py2:
+        scmd = b'scancode'
+    else:
+        scmd = u'scancode'
     scan_cmd = os.path.join(scancode_root_dir, scmd)
     rc, stdout, stderr = execute2(cmd_loc=scan_cmd, args=options, cwd=cwd, env=env)
 
@@ -67,11 +79,12 @@ stderr:
     return rc, stdout, stderr
 
 
-def run_scan_click(options, monkeypatch=None, test_mode=True, expected_rc=0, env=None):
+def run_scan_click(options, monkeypatch=None, test_mode=True, expected_rc=0, env=None, retry=on_windows):
     """
     Run a scan as a Click-controlled subprocess
     If monkeypatch is provided, a tty with a size (80, 43) is mocked.
     Return a click.testing.Result object.
+    If retry is True, wait 10 seconds after a failure and retry once
     """
     import click
     from click.testing import CliRunner
@@ -85,12 +98,19 @@ def run_scan_click(options, monkeypatch=None, test_mode=True, expected_rc=0, env
     if monkeypatch:
         monkeypatch.setattr(click._termui_impl, 'isatty', lambda _: True)
         monkeypatch.setattr(click , 'get_terminal_size', lambda : (80, 43,))
+
     runner = CliRunner()
 
     result = runner.invoke(cli.scancode, options, catch_exceptions=False, env=env)
+    if result.exit_code != expected_rc and retry:
+        # wait and rerun in verbose mode to get more in the output
+        time.sleep(10)
+        if '--verbose' not in options:
+            options.append('--verbose')
+        result = runner.invoke(cli.scancode, options, catch_exceptions=False, env=env)
 
-    output = result.output
     if result.exit_code != expected_rc:
+        output = result.output
         opts = get_opts(options)
         error = '''
 Failure to run: scancode %(opts)s
@@ -133,7 +153,7 @@ def remove_windows_extra_timeout(scancode_options, timeout=WINDOWS_CI_TIMEOUT):
             del scancode_options['--timeout']
 
 
-def check_json_scan(expected_file, result_file, regen=False, remove_file_date=False):
+def check_json_scan(expected_file, result_file, regen=False, remove_file_date=False, ignore_headers=False):
     """
     Check the scan `result_file` JSON results against the `expected_file`
     expected JSON results.
@@ -146,10 +166,14 @@ def check_json_scan(expected_file, result_file, regen=False, remove_file_date=Fa
     """
     results = load_json_result(result_file, remove_file_date)
     if regen:
-        with open(expected_file, 'wb') as reg:
+        with open(expected_file, mode) as reg:
             json.dump(results, reg, indent=2, separators=(',', ': '))
 
     expected = load_json_result(expected_file, remove_file_date)
+
+    if ignore_headers:
+        results.pop('headers', None)
+        expected.pop('headers', None)
 
     # NOTE we redump the JSON as a string for a more efficient display of the
     # failures comparison/diff
@@ -212,6 +236,9 @@ def streamline_headers(headers):
         remove_windows_extra_timeout(hle.get('options', {}))
         hle.pop('start_timestamp', None)
         hle.pop('end_timestamp', None)
+        hle.pop('duration', None)
+        header= hle.get('options', {})
+        header.pop('--verbose', None)
         streamline_errors(hle['errors'])
 
 
@@ -240,7 +267,7 @@ def check_jsonlines_scan(expected_file, result_file, regen=False, remove_file_da
     streamline_jsonlines_scan(results, remove_file_date)
 
     if regen:
-        with open(expected_file, 'wb') as reg:
+        with open(expected_file, mode) as reg:
             json.dump(results, reg, indent=2, separators=(',', ': '))
 
     with io.open(expected_file, encoding='utf-8') as res:

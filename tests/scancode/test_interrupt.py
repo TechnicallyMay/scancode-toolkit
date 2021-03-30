@@ -32,8 +32,8 @@ from time import sleep
 import threading
 
 from commoncode.testcase import FileBasedTesting
-
 from scancode import interrupt
+
 
 """
 Note that these tests check the active threads count before and after each test to
@@ -66,7 +66,7 @@ class TestInterrupt(FileBasedTesting):
                 sleep(i)
             return 'OK'
 
-        results = interrupt.interruptible(some_long_function, args=(20,), timeout=0.00001)
+        results = interrupt.interruptible(some_long_function, args=(20,), timeout=0.1)
         expected = 'ERROR: Processing interrupted: timeout after 0 seconds.', None
         assert expected == results
 

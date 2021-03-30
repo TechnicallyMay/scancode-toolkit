@@ -1,20 +1,20 @@
-expected_failure: yes
 license_expressions:
   - other-permissive
   - postgresql
   - henry-spencer-1999
-  - artistic-2.0 OR gpl-1.0-plus
-  - warranty-disclaimer
+  - tcl
+  - tcl
+  - (artistic-perl-1.0 OR gpl-1.0-plus) AND bsd-new
+  - postgresql
+  - postgresql
+  - bsd-new
+  - bsd-new
+  - bsd-new
   - bsd-new
   - bsd-new
   - bsd-new
   - bsd-new
   - other-permissive
-  - bsd-new
-  - bsd-new
   - other-permissive
-  - bsd-new
-  - other-permissive
-  - bsd-new
-  - other-permissive
+  - tcl
   - tcl

@@ -27,15 +27,21 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import io
 import os
 import re
 
 import pytest
 
+import cluecode_test_utils
+from commoncode import compat
+from commoncode.system import py2
+from commoncode.system import py3
 from commoncode.testcase import FileDrivenTesting
 from commoncode.text import python_safe_name
 
-import cluecode_test_utils
+pytestmark = pytest.mark.scanslow
+
 
 """
 Tests of ScanCode copyright detection using Fossology copyright test suite data.
@@ -46,17 +52,10 @@ test_env.test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
 
 
 expected_failures = set('''
-    test_fossology_copyright_testdata14
-    test_fossology_copyright_testdata19
-    test_fossology_copyright_testdata18
-    test_fossology_copyright_testdata83
-    test_fossology_copyright_testdata87
-    test_fossology_copyright_testdata79
-    test_fossology_copyright_testdata78
     test_fossology_copyright_testdata5
+    test_fossology_copyright_testdata19
+    test_fossology_copyright_testdata78
     test_fossology_copyright_testdata86
-    test_fossology_copyright_testdata126
-    test_fossology_copyright_testdata31
     '''.split()
 )
 
@@ -79,70 +78,72 @@ def build_copyright_test_methods_with_fossology_data():
 
     assert sorted(test_files) == sorted(files_to_test + expected_files)
 
-    copyregex = re.compile('<s>(.*?)</s>', re.DOTALL | re.UNICODE)
+    copyregex = re.compile('<s>(.*?)</s>', re.DOTALL | re.UNICODE)  # NOQA
     for expected_file, test_file in zip(expected_files, files_to_test):
 
-        expected_text = open(expected_file, 'rb').read()
+        with io.open(expected_file, 'r', encoding='utf-8') as i:
+            expected_text = i.read()
 
         expected_copyrights = []
         for match in copyregex.finditer(expected_text):
             expected_copyrights.extend(match.groups())
 
         reps = [
-            (b'. All rights reserved.', b'.'),
-            (b'All Rights Reserved except as specified below.', b''),
-            (b' All # Rights Reserved.', b''),
-            (b'#', b' '),
-            (b'  ', b' '),
-            (b'* All Rights Reserved.', b''),
-            (b'All rights reserved', b''),
-            (b'All Rights Reserved', b''),
-            (b'Copyright:', b'Copyright '),
-            (b'. .', b'.'),
-            (b' *% ', b' '),
-            (b'&copy;', b'(c)'),
-            (b' * ', b' '),
-            (b'Copyright  Copyright', b'Copyright'),
-            (b'Copyright Copyright', b'Copyright'),
-            (b'All rights reserved.', b''),
-            (b'Created 1991.', b''),
-            (b'Created 1990.', b''),
-            (b'copyright under', b''),
-            (b'@copyright{}', b''),
-            (b'. .', b'.'),
-            (b'', b''),
+            ('. All rights reserved.', '.'),
+            ('All Rights Reserved except as specified below.', ''),
+            (' All # Rights Reserved.', ''),
+            ('#', ' '),
+            ('  ', ' '),
+            ('* All Rights Reserved.', ''),
+            ('All rights reserved', ''),
+            ('All Rights Reserved', ''),
+            ('Copyright:', 'Copyright '),
+            ('. .', '.'),
+            (' *% ', ' '),
+            ('&copy;', '(c)'),
+            (' * ', ' '),
+            ('Copyright  Copyright', 'Copyright'),
+            ('Copyright Copyright', 'Copyright'),
+            ('All rights reserved.', ''),
+            ('Created 1991.', ''),
+            ('Created 1990.', ''),
+            ('copyright under', ''),
+            ('@copyright{}', ''),
+            ('. .', '.'),
+            ('', ''),
         ]
 
         expected_copyrights_fixed = []
 
         for value in expected_copyrights:
             if value.lower().startswith(
-                (b'written', b'auth', b'maint', b'put', b'contri', b'indiv', b'mod')):
+                ('written', 'auth', 'maint', 'put', 'contri', 'indiv', 'mod')):
                 continue
 
-            value = b' '.join(value.split())
+            value = ' '.join(value.split())
 
             for x, y in reps:
                 value = value.replace(x, y)
 
             value = value.strip()
-            value = value.rstrip(b',;:')
+            value = value.rstrip(',;:')
             value = value.strip()
-            value = b' '.join(value.split())
+            value = ' '.join(value.split())
             expected_copyrights_fixed.append(value.strip())
 
         expected_copyrights = [e for e in expected_copyrights_fixed if e and e .strip()]
 
         test_method = make_test_func(test_file, expected_file, expected_copyrights)
 
-        tfn = test_file.replace(test_data_dir, '').strip('\/\\')
+        tfn = test_file.replace(test_data_dir, '').strip('\\/\\')
         test_name = 'test_fossology_copyright_%(tfn)s' % locals()
         test_name = python_safe_name(test_name)
-        if isinstance(test_name, unicode):
+        if py2 and isinstance(test_name, compat.unicode):
             test_name = test_name.encode('utf-8')
+        if py3 and not isinstance(test_name, compat.unicode):
+            test_name = test_name.decode('utf-8')
 
         test_method.__name__ = test_name
-        test_method.funcname = test_name
 
         if test_name in expected_failures:
             test_method = pytest.mark.xfail(test_method)
@@ -153,7 +154,6 @@ def build_copyright_test_methods_with_fossology_data():
 def make_test_func(test_file_loc, expected_file_loc, expected):
     def copyright_test_method(self):
         copyrights, _authors, _holders = cluecode_test_utils.copyright_detector(test_file_loc)
-        copyrights = [c.encode('utf-8') for c in copyrights]
 
         try:
             assert expected == copyrights

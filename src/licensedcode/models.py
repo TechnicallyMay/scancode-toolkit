@@ -29,7 +29,6 @@ from __future__ import unicode_literals
 
 from collections import Counter
 from collections import defaultdict
-from collections import namedtuple
 from collections import OrderedDict
 from functools import partial
 from itertools import chain
@@ -49,24 +48,25 @@ from commoncode.fileutils import file_base_name
 from commoncode.fileutils import file_name
 from commoncode.fileutils import resource_iter
 from commoncode import saneyaml
+from licensedcode import MIN_MATCH_HIGH_LENGTH
+from licensedcode import MIN_MATCH_LENGTH
+from licensedcode import SMALL_RULE
+from licensedcode.tokenize import query_tokenizer
 from textcode.analysis import numbered_text_lines
 
-from licensedcode import MIN_MATCH_LENGTH
-from licensedcode import MIN_MATCH_HIGH_LENGTH
-from licensedcode.tokenize import query_tokenizer
-
-# these are globals but always side-by-side with the code so not moving
-data_dir = join(abspath(dirname(__file__)), 'data')
-licenses_data_dir = join(data_dir, 'licenses')
-rules_data_dir = join(data_dir, 'rules')
 
 """
 Reference License and license Rule structures persisted as a combo of a YAML
 data file and one or more text files containing license or notice texts.
 """
 
-# Set to True to print detailed representations of objects when tracing
+# Set to True to print more detailed representations of objects when tracing
 TRACE_REPR = False
+
+# these are globals but always side-by-side with the code so do no not move them around
+data_dir = join(abspath(dirname(__file__)), 'data')
+licenses_data_dir = join(data_dir, 'licenses')
+rules_data_dir = join(data_dir, 'rules')
 
 
 FOSS_CATEGORIES = set([
@@ -80,10 +80,10 @@ FOSS_CATEGORIES = set([
 
 OTHER_CATEGORIES = set([
     'Commercial',
-    'Free Restricted',
     'Proprietary Free',
+    'Free Restricted',
+    'Source-available',
     'Unstated License',
-    'Hardware License',
 ])
 
 
@@ -136,7 +136,8 @@ class License(object):
     spdx_license_key = __attrib(default=None)
     # list of other keys, such as deprecated ones
     other_spdx_license_keys = __attrib(default=attr.Factory(list))
-
+    # OSI License Key
+    osi_license_key = __attrib(default=None)
     # Various URLs for info
     text_urls = __attrib(default=attr.Factory(list))
     osi_url = __attrib(default=None)
@@ -147,8 +148,15 @@ class License(object):
     key_aliases = __attrib(default=attr.Factory(list))
 
     minimum_coverage = __attrib(default=0)
-    relevance = __attrib(default=100)
     standard_notice = __attrib(default=None)
+
+    # lists of copuyrights, emails and URLs that can be ignored when detected
+    # in this license as they are part of the license or rule text itself
+    ignorable_copyrights = __attrib(default=attr.Factory(list))
+    ignorable_authors = __attrib(default=attr.Factory(list))
+    ignorable_holders = __attrib(default=attr.Factory(list))
+    ignorable_urls = __attrib(default=attr.Factory(list))
+    ignorable_emails = __attrib(default=attr.Factory(list))
 
     # data file paths and known extensions
     data_file = __attrib(default=None)
@@ -173,7 +181,7 @@ class License(object):
         """
         if not target_dir or target_dir == self.src_dir:
             raise ValueError(
-                'Cannot relocate f License to empty directory or same directory.')
+                'Cannot relocate {} License to empty directory or same directory.'.format(self.key))
 
         if new_key:
             key = new_key
@@ -230,12 +238,16 @@ class License(object):
             if attr.name == 'language' and value == 'en':
                 return False
 
-            if attr.name == 'relevance' and value == 100:
+            if attr.name == 'minimum_coverage' and value == 100:
                 return False
-
             return True
 
-        return attr.asdict(self, filter=dict_fields, dict_factory=OrderedDict)
+        data = attr.asdict(self, filter=dict_fields, dict_factory=OrderedDict)
+        cv = data.get('minimum_coverage')
+        if cv and isinstance(cv, float) and int(cv) == cv:
+            cv = int(cv)
+            data['minimum_coverage'] = cv
+        return data
 
     def dump(self):
         """
@@ -337,7 +349,8 @@ class License(object):
             if not lic.category:
                 error('No category')
             if lic.category and lic.category not in CATEGORIES:
-                error('Unknown license category: {}'.format(lic.category))
+                cats = '\n'.join(sorted(CATEGORIES))
+                error('Unknown license category: {}.\nUse one of these valid categories:\n{}'.format(lic.category, cats))
             if not lic.owner:
                 error('No owner')
 
@@ -432,6 +445,10 @@ class License(object):
         return errors, warnings, infos
 
 
+def ignore_editor_tmp_files(location):
+    return location.endswith('.swp')
+
+
 def load_licenses(licenses_data_dir=licenses_data_dir , with_deprecated=False):
     """
     Return a mapping of key -> license objects, loaded from license files.
@@ -439,7 +456,7 @@ def load_licenses(licenses_data_dir=licenses_data_dir , with_deprecated=False):
     """
     licenses = {}
     used_files = set()
-    all_files = set(resource_iter(licenses_data_dir, with_dirs=False))
+    all_files = set(resource_iter(licenses_data_dir, ignored=ignore_editor_tmp_files, with_dirs=False))
     for data_file in sorted(all_files):
         if data_file.endswith('.yml'):
             key = file_base_name(data_file)
@@ -495,7 +512,7 @@ def check_rules_integrity(rules, licenses_by_key):
         if unknown_keys:
             invalid_rules[rule.data_file].update(unknown_keys)
 
-        if not rule.has_importance_flags and not (rule.is_negative or rule.is_false_positive):
+        if not rule.has_flags and not (rule.is_negative or rule.is_false_positive):
             rules_without_flags.add(rule.data_file)
 
     if invalid_rules:
@@ -503,7 +520,7 @@ def check_rules_integrity(rules, licenses_by_key):
             ' '.join(keys) + '\n' +
             'file://' + data_file + '\n' +
             'file://' + data_file.replace('.yml', '.RULE') + '\n'
-        for data_file, keys in invalid_rules.iteritems() if keys)
+        for data_file, keys in invalid_rules.items() if keys)
         msg = 'Rules referencing missing licenses:\n' + '\n'.join(sorted(invalid_rules))
         raise MissingLicenses(msg)
 
@@ -521,20 +538,29 @@ def build_rules_from_licenses(licenses):
     Return an iterable of rules built from each license text from a `licenses`
     iterable of license objects.
     """
-    for license_key, license_obj in licenses.iteritems():
+    for license_key, license_obj in licenses.items():
         text_file = join(license_obj.src_dir, license_obj.text_file)
-        minimum_coverage = license_obj.minimum_coverage or 0
-        has_stored_relevance = license_obj.relevance != 100
-        relevance = license_obj.relevance or 100
-
         if exists(text_file):
-            yield Rule(text_file=text_file,
-                       license_expression=license_key,
-                       minimum_coverage=minimum_coverage,
-                       relevance=relevance,
-                       has_stored_relevance=has_stored_relevance,
-                       is_license=True,
-                       is_license_text=True)
+            minimum_coverage = license_obj.minimum_coverage or 0
+            yield Rule(
+                text_file=text_file,
+                license_expression=license_key,
+
+                has_stored_relevance=False,
+                relevance=100,
+
+                has_stored_minimum_coverage=bool(minimum_coverage),
+                minimum_coverage=minimum_coverage,
+
+                is_license=True,
+                is_license_text=True,
+
+                ignorable_copyrights=license_obj.ignorable_copyrights,
+                ignorable_holders=license_obj.ignorable_holders,
+                ignorable_authors=license_obj.ignorable_authors,
+                ignorable_urls=license_obj.ignorable_urls,
+                ignorable_emails=license_obj.ignorable_emails,
+            )
 
 
 def get_all_spdx_keys(licenses):
@@ -542,7 +568,7 @@ def get_all_spdx_keys(licenses):
     Return an iterable of SPDX license keys collected from a `licenses` iterable
     of license objects.
     """
-    for lic in licenses.viewvalues():
+    for lic in licenses.values():
         for spdx_key in lic.spdx_keys():
             yield spdx_key
 
@@ -553,6 +579,7 @@ def get_essential_spdx_tokens():
     """
     yield 'spdx'
     yield 'license'
+    yield 'licence'
     yield 'identifier'
     yield 'licenseref'
 
@@ -636,28 +663,6 @@ def load_rules(rules_data_dir=rules_data_dir):
         raise Exception(msg)
 
 
-# a set of thresholds for this rule to determine when a match should be treated
-# as a good match
-# TODO: use attr instead
-Thresholds = namedtuple(
-    'Thresholds',
-    [
-        # number of "high" tokens in this rule
-        'high_len',
-        # number of "low" tokens in this rule
-        'low_len',
-        # length of the rule
-        'length',
-        # boolean set to True from Rule.small()
-        'small',
-        # minimum number of "high" tokens to match for this rule
-        'min_high',
-        # minimum number of tokens to match for this rule
-        'min_len'
-    ]
-)
-
-
 @attr.s(slots=True)
 class Rule(object):
     """
@@ -671,7 +676,7 @@ class Rule(object):
     ###########
 
     # optional rule id int typically assigned at indexing time
-    rid = attr.ib(default=None, repr=False)
+    rid = attr.ib(default=None, repr=TRACE_REPR)
 
     # unique identifier
     identifier = attr.ib(default=None)
@@ -701,15 +706,23 @@ class Rule(object):
     # this provides a strong confidence wrt detection
     is_license_tag = attr.ib(default=False, repr=False)
 
-    # is this rule text a false positive when matched? (filtered out) FIXME: this
-    # should be unified with the relevance: a false positive match is a a match
-    # with a relevance of zero
-    is_false_positive = attr.ib(default=False)
+    # is this rule text a false positive when matched? it will filtered out at
+    # the end if matched
+    is_false_positive = attr.ib(default=False, repr=False)
 
-    is_negative = attr.ib(default=False)
+    # is this rule text a negative rule? it will be removed from the matchable
+    # text the start if matched
+    is_negative = attr.ib(default=False, repr=False)
 
-    # is this rule text only to be matched with a minimum coverage?
+    # is this rule text only to be matched with a minimum coverage e.g. a
+    # minimum proportion of tokens as a float between 0 and 100 where 100 means
+    # all tokens must be matched and a smaller value means a smaller propertion
+    # of matched tokens is acceptable. this is computed unless this is provided
+    # here.
     minimum_coverage = attr.ib(default=0)
+    has_stored_minimum_coverage = attr.ib(default=False, repr=False)
+    # same as minimum_coverage but divided/100
+    _minimum_containment = attr.ib(default=0, repr=False)
 
     # Can this rule be matched if there are unknown words in its matched range?
     # The default is to allow known and unknown words. Unknown words are words
@@ -735,6 +748,16 @@ class Rule(object):
     # set to True if the rule is built from a .LICENSE full text
     is_license = attr.ib(default=False, repr=False)
 
+    # lists of copuyrights, emails and URLs that can be ignored when detected
+    # in this license as they are part of the license or rule text itself
+    ignorable_copyrights = attr.ib(default=attr.Factory(list), repr=False)
+    ignorable_holders = attr.ib(default=attr.Factory(list), repr=False)
+    ignorable_authors = attr.ib(default=attr.Factory(list), repr=False)
+    ignorable_urls = attr.ib(default=attr.Factory(list), repr=False)
+    ignorable_emails = attr.ib(default=attr.Factory(list), repr=False)
+
+    ###########################################################################
+
     # path to the YAML data file for this rule
     data_file = attr.ib(default=None, repr=False)
 
@@ -748,21 +771,37 @@ class Rule(object):
     # These attributes are computed upon text loading or setting the thresholds
     ###########################################################################
 
-    # length in number of token strings
-    length = attr.ib(default=0, repr=False)
+    # lengths in tokens
+    length = attr.ib(default=0)
+    min_matched_length = attr.ib(default=0, repr=TRACE_REPR)
 
-    # lengths in token ids, including high/low token counts, set in indexing.
-    # This considers the all tokens occurences
-    high_length = attr.ib(default=0, repr=False)
-    low_length = attr.ib(default=0, repr=False)
-    _thresholds = attr.ib(default=None, repr=False)
+    high_length = attr.ib(default=0, repr=TRACE_REPR)
+    min_high_matched_length = attr.ib(default=0, repr=TRACE_REPR)
 
-    # lengths in token ids, including high/low token counts, set in indexing.
-    # This considers the unique tokens (ignoring multiple occurences)
-    high_unique = attr.ib(default=0, repr=False)
-    low_unique = attr.ib(default=0, repr=False)
-    length_unique = attr.ib(default=0, repr=False)
-    _thresholds_unique = attr.ib(default=None, repr=False)
+    # lengths in unique token.
+    length_unique = attr.ib(default=0, repr=TRACE_REPR)
+    min_matched_length_unique = attr.ib(default=0, repr=TRACE_REPR)
+
+    high_length_unique = attr.ib(default=0, repr=TRACE_REPR)
+    min_high_matched_length_unique = attr.ib(default=0, repr=TRACE_REPR)
+
+    is_small = attr.ib(default=False, repr=TRACE_REPR)
+
+    has_computed_thresholds = attr.ib(default=False, repr=False)
+
+    def get_length(self, unique=False):
+        return self.length_unique if unique else self.length
+
+    def get_min_matched_length(self, unique=False):
+        return (self.min_matched_length_unique if unique
+                else self.min_matched_length)
+
+    def get_high_length(self, unique=False):
+        return self.high_length_unique if unique else self.high_length
+
+    def get_min_high_matched_length(self, unique=False):
+        return (self.min_high_matched_length_unique if unique
+                else self.min_high_matched_length)
 
     def __attrs_post_init__(self, *args, **kwargs):
         if not self.text_file:
@@ -784,6 +823,9 @@ class Rule(object):
 
         if self.relevance and self.relevance != 100:
             self.has_stored_relevance = True
+
+        if self.minimum_coverage:
+            self.has_stored_minimum_coverage = True
 
         if self.license_expression:
             try:
@@ -817,7 +859,7 @@ class Rule(object):
         # on one line: this is used to determine a matching approach
 
         # FIXME: this does not lower the text first??
-        if text.startswith(('http://', 'https://', 'ftp://')) and '\n' not in text[:1000]:
+        if text.startswith(('http://', 'https://', 'ftp://')) and '\n' not in text[:1000].lower():
             self.minimum_coverage = 100
 
         for token in query_tokenizer(self.text()):
@@ -841,7 +883,8 @@ class Rule(object):
             return self.stored_text
 
         else:
-            raise Exception('Inconsistent rule text for: ' + self.identifier + '\nfile://' + self.text_file)
+            raise Exception('Inconsistent rule text for: ' +
+                            self.identifier + '\nfile://' + self.text_file)
 
     def license_keys(self, unique=True):
         """
@@ -867,94 +910,28 @@ class Rule(object):
             return self.licensing.contains(
                 self.license_expression_object, other.license_expression_object)
 
-    def small(self):
+    def compute_thresholds(self, small_rule=SMALL_RULE):
         """
-        Is this a small rule? It needs special handling for detection.
+        Compute and set thresholds either considering the occurrence of all
+        tokens or the occurance of unique tokens.
         """
-        SMALL_RULE = 15
-        return self.length < SMALL_RULE or self.minimum_coverage == 100
+        minimum_coverage, self.min_matched_length, self.min_high_matched_length = (
+            compute_thresholds_occurences(
+                self.minimum_coverage,
+                self.length,
+                self.high_length))
+        if not self.has_stored_minimum_coverage:
+            self.minimum_coverage = minimum_coverage
 
-    def thresholds(self):
-        """
-        Return a Thresholds tuple considering the occurrence of all tokens.
-        """
-        if not self._thresholds:
-            length = self.length
-            high_length = self.high_length
-            if length > 200:
-                min_high = high_length // 10
-                min_len = length // 10
-            else:
-                min_high = min([high_length, MIN_MATCH_HIGH_LENGTH])
-                min_len = MIN_MATCH_LENGTH
+        self._minimum_containment = self.minimum_coverage / 100
 
-            # note: we cascade ifs from largest to smallest lengths
-            # FIXME: this is not efficient
+        self.min_matched_length_unique, self.min_high_matched_length_unique = (
+        compute_thresholds_unique(
+            self.minimum_coverage,
+            self.length,
+            self.length_unique, self.high_length_unique))
 
-            if self.length < 30:
-                min_len = length // 2
-
-            if self.length < 10:
-                min_high = high_length
-                min_len = length
-                self.minimum_coverage = 80
-
-            if self.length < 3:
-                min_high = high_length
-                min_len = length
-                self.minimum_coverage = 100
-
-            if self.minimum_coverage == 100:
-                min_high = high_length
-                min_len = length
-
-            self._thresholds = Thresholds(
-                high_length, self.low_length, length,
-                self.small(), min_high, min_len
-            )
-        return self._thresholds
-
-    def thresholds_unique(self):
-        """
-        Return a Thresholds tuple considering the occurrence of only unique tokens.
-        """
-        if not self._thresholds_unique:
-            length = self.length
-            high_unique = self.high_unique
-            length_unique = self.length_unique
-
-            if length > 200:
-                min_high = high_unique // 10
-                min_len = length // 10
-            else:
-                highu = (int(high_unique // 2)) or high_unique
-                min_high = min([highu, MIN_MATCH_HIGH_LENGTH])
-                min_len = MIN_MATCH_LENGTH
-
-            # note: we cascade IFs from largest to smallest lengths
-            if length < 20:
-                min_high = high_unique
-                min_len = min_high
-
-            if length < 10:
-                min_high = high_unique
-                if length_unique < 2:
-                    min_len = length_unique
-                else:
-                    min_len = length_unique - 1
-
-            if length < 5:
-                min_high = high_unique
-                min_len = length_unique
-
-            if self.minimum_coverage == 100:
-                min_high = high_unique
-                min_len = length_unique
-
-            self._thresholds_unique = Thresholds(
-                high_unique, self.low_unique, length_unique,
-                self.small(), min_high, min_len)
-        return self._thresholds_unique
+        self.is_small = self.length < small_rule
 
     def to_dict(self):
         """
@@ -980,23 +957,35 @@ class Rule(object):
             if tag_value:
                 data[flag] = tag_value
 
-        if self.has_stored_relevance:
+        if self.has_stored_relevance and self.relevance:
             rl = self.relevance
-            if int(rl) == rl:
+            if isinstance(rl, float) and int(rl) == rl:
                 rl = int(rl)
             data['relevance'] = rl
 
-        if self.minimum_coverage:
-            mc = self.minimum_coverage
-            if int(mc) == mc:
-                mc = int(mc)
-            data['minimum_coverage'] = mc
+        if self.has_stored_minimum_coverage and self.minimum_coverage > 0:
+            cv = self.minimum_coverage
+            if isinstance(cv, float) and int(cv) == cv:
+                cv = int(cv)
+            data['minimum_coverage'] = cv
 
         if self.referenced_filenames:
             data['referenced_filenames'] = self.referenced_filenames
 
         if self.notes:
             data['notes'] = self.notes
+
+        if self.ignorable_copyrights:
+            data['ignorable_copyrights'] = self.ignorable_copyrights
+        if self.ignorable_holders:
+            data['ignorable_holders'] = self.ignorable_holders
+        if self.ignorable_authors:
+            data['ignorable_authors'] = self.ignorable_authors
+        if self.ignorable_urls:
+            data['ignorable_urls'] = self.ignorable_urls
+        if self.ignorable_emails:
+            data['ignorable_emails'] = self.ignorable_emails
+
         return data
 
     def dump(self):
@@ -1053,18 +1042,18 @@ class Rule(object):
             msg = 'License rule {} is missing a license_expression.'
             raise Exception(msg.format(self))
 
-        relevance = data.get('relevance')
-        if relevance is not None:
+        relevance = float(data.get('relevance', 0))
+        if relevance:
+            if relevance <= 0 or relevance > 100:
+                msg = ('License rule {} data file has an invalid relevance. '
+                       'Should be above 0 and 100 or less: {}')
+                raise Exception(msg.format(self, repr(relevance)))
             # Keep track if we have a stored relevance of not.
+            self.relevance = relevance
             self.has_stored_relevance = True
-            self.relevance = float(relevance)
-            if not (0 < self.relevance <= 100):
-                msg = (
-                    'License rule {} data file has an invalid relevance. '
-                    'Should be between 0 and 100: {}')
-                raise Exception(msg.format(self, unknown_attributes))
 
         self.minimum_coverage = float(data.get('minimum_coverage', 0))
+        self._minimum_containment = self.minimum_coverage / 100
 
         if not (0 <= self.minimum_coverage <= 100):
             msg = (
@@ -1093,6 +1082,12 @@ class Rule(object):
             msg = 'Special License rule {} is missing explanatory notes.'
             raise Exception(msg.format(self))
 
+        self.ignorable_copyrights = data.get('ignorable_copyrights', [])
+        self.ignorable_holders = data.get('ignorable_holders', [])
+        self.ignorable_authors = data.get('ignorable_authors', [])
+        self.ignorable_urls = data.get('ignorable_urls', [])
+        self.ignorable_emails = data.get('ignorable_emails', [])
+
         return self
 
     def compute_relevance(self):
@@ -1111,18 +1106,22 @@ class Rule(object):
         "relevance" attribute or computed base on the rule length here using
         this approach:
 
-        - a false positive or a negative rule has a relevance of zero.
+        - a false positive or a negative rule has a relevance of 100.
         - a rule of length equal to or larger than a threshold has a 100 relevance
         - a rule of length smaller than a threshold has a relevance of
           100/threshold, rounded down.
 
         The current threshold is 18 words.
         """
+
+        if isinstance(self, SpdxRule):
+            self.relevance = 100
+            return
+
         if self.has_stored_relevance:
             return
 
-        # case for false positive: they do not have licenses and their matches are
-        # never returned. Relevance is zero.
+        # case for false positive
         if self.is_false_positive:
             self.relevance = 100
             return
@@ -1144,17 +1143,89 @@ class Rule(object):
             self.relevance = min([100, computed])
 
     @property
-    def has_importance_flags(self):
+    def has_flags(self):
         """
-        Return True if this Rule has at least one "importance" flag set.
-        Needed as a temporary helper during setting importance flags.
+        Return True if this Rule has at least one flag set.
         """
-        return (
-            self.is_license_text
-            or self.is_license_notice
-            or self.is_license_reference
-            or self.is_license_tag
-        )
+        return (self.is_license_text or self.is_license_notice
+            or self.is_license_reference or self.is_license_tag)
+
+
+def compute_thresholds_occurences(minimum_coverage, length, high_length,
+        _MIN_MATCH_HIGH_LENGTH=MIN_MATCH_HIGH_LENGTH,
+        _MIN_MATCH_LENGTH=MIN_MATCH_LENGTH):
+    """
+    Compute and return thresholds considering the occurrence of all tokens.
+    """
+    if minimum_coverage == 100:
+        min_matched_length = length
+        min_high_matched_length = high_length
+        return minimum_coverage, min_matched_length, min_high_matched_length
+
+    if length < 3:
+        min_high_matched_length = high_length
+        min_matched_length = length
+        minimum_coverage = 100
+
+    elif length < 10:
+        min_matched_length = length
+        min_high_matched_length = high_length
+        minimum_coverage = 80
+
+    elif length < 30:
+        min_matched_length = length // 2
+        min_high_matched_length = min(high_length, _MIN_MATCH_HIGH_LENGTH)
+        minimum_coverage = 50
+
+    elif length < 200:
+        min_matched_length = _MIN_MATCH_LENGTH
+        min_high_matched_length = min(high_length, _MIN_MATCH_HIGH_LENGTH)
+        # minimum_coverage = max(15, int(length//10))
+
+    else:  # if length >= 200:
+        min_matched_length = length // 10
+        min_high_matched_length = high_length // 10
+        # minimum_coverage = int(length//10)
+
+    return minimum_coverage, min_matched_length, min_high_matched_length
+
+
+def compute_thresholds_unique(minimum_coverage, length, length_unique, high_length_unique,
+        _MIN_MATCH_HIGH_LENGTH=MIN_MATCH_HIGH_LENGTH,
+        _MIN_MATCH_LENGTH=MIN_MATCH_LENGTH):
+    """
+    Compute and set thresholds considering the occurrence of only unique tokens.
+    """
+    if minimum_coverage == 100:
+        min_matched_length_unique = length_unique
+        min_high_matched_length_unique = high_length_unique
+        return min_matched_length_unique, min_high_matched_length_unique
+
+    if length > 200:
+        min_matched_length_unique = length // 10
+        min_high_matched_length_unique = high_length_unique // 10
+
+    elif length < 5:
+        min_matched_length_unique = length_unique
+        min_high_matched_length_unique = high_length_unique
+
+    elif length < 10:
+        if length_unique < 2:
+            min_matched_length_unique = length_unique
+        else:
+            min_matched_length_unique = length_unique - 1
+        min_high_matched_length_unique = high_length_unique
+
+    elif length < 20:
+        min_matched_length_unique = high_length_unique
+        min_high_matched_length_unique = high_length_unique
+
+    else:
+        min_matched_length_unique = _MIN_MATCH_LENGTH
+        highu = (int(high_length_unique // 2)) or high_length_unique
+        min_high_matched_length_unique = min(highu, _MIN_MATCH_HIGH_LENGTH)
+
+    return min_matched_length_unique, min_high_matched_length_unique
 
 
 @attr.s(slots=True, repr=False)
@@ -1165,23 +1236,21 @@ class SpdxRule(Rule):
 
     Since we may have an infinite possible number of SPDX expressions and these
     are not backed by a traditional rule text file, we use this class to handle
-    the specifics of these how rules that are built at matching time.
+    the specifics of these how rules that are built at matching time: one rule
+    is created for each detected SPDX license expression.
     """
 
     def __attrs_post_init__(self, *args, **kwargs):
         self.identifier = 'spdx-license-identifier: ' + self.license_expression
-        self.has_stored_relevance = True
-        self.relevance = 100
-
+        expression = None
         try:
             expression = self.licensing.parse(self.license_expression)
         except:
             raise Exception(
                 'Unable to parse License rule expression: ' +
-                repr(self.license_expression) + ' for: file://' +
-                (self.data_file or '') +
-                '\n' + traceback.format_exc()
-            )
+                repr(self.license_expression) + ' for: SPDX rule:' +
+                self.stored_text +
+                '\n' + traceback.format_exc())
         if expression is None:
             raise Exception(
                 'Unable to parse License rule expression: '
@@ -1190,15 +1259,15 @@ class SpdxRule(Rule):
         self.license_expression = expression.render()
         self.license_expression_object = expression
         self.is_license_tag = True
+        self.is_small = False
+        self.relevance =100
+        self.has_stored_relevance = True
 
     def load(self):
         raise NotImplementedError
 
     def dump(self):
         raise NotImplementedError
-
-    def small(self):
-        return False
 
 
 def _print_rule_stats():
@@ -1210,10 +1279,55 @@ def _print_rule_stats():
     rules = idx.rules_by_rid
     sizes = Counter(r.length for r in rules)
     print('Top 15 lengths: ', sizes.most_common(15))
-    print('15 smallest lengths: ', sorted(sizes.iteritems(),
+    print('15 smallest lengths: ', sorted(sizes.items(),
                                           key=itemgetter(0))[:15])
 
     high_sizes = Counter(r.high_length for r in rules)
     print('Top 15 high lengths: ', high_sizes.most_common(15))
-    print('15 smallest high lengths: ', sorted(high_sizes.iteritems(),
+    print('15 smallest high lengths: ', sorted(high_sizes.items(),
                                                key=itemgetter(0))[:15])
+
+
+def update_ignorables(licensish, verbose=False, dump=True):
+    """
+    Collect, update and save the ignorable_* attributes of a `licensish` Rule or
+    License object.
+    """
+    location = licensish.text_file
+
+    if verbose:
+        print('Processing:', 'file://' + location)
+
+    if not exists(location):
+        return licensish
+
+    # collect and set ignorable copyrights, holders and authors
+    from cluecode.copyrights import detect_copyrights
+    copyrights = set()
+    holders = set()
+    authors = set()
+
+    for dtype, value, _start, _end in detect_copyrights(location):
+        if dtype == 'copyrights':
+            copyrights.add(value)
+        elif dtype == 'holders':
+            holders.add(value)
+        elif dtype == 'authors':
+            authors.add(value)
+
+    licensish.ignorable_copyrights = sorted(copyrights)
+    licensish.ignorable_holders = sorted(holders)
+    licensish.ignorable_authors = sorted(authors)
+
+    # collect and set ignrable emails and urls
+    from cluecode.finder import find_urls
+    from cluecode.finder import find_emails
+
+    urls = set(u for (u, _ln) in find_urls(location) if u)
+    licensish.ignorable_urls = sorted(urls)
+
+    emails = set(u for (u, _ln) in find_emails(location) if u)
+    licensish.ignorable_emails = sorted(emails)
+    if dump:
+        licensish.dump()
+    return licensish

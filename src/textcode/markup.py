@@ -32,6 +32,7 @@ import logging
 import os
 import re
 
+from commoncode.text import as_unicode
 from typecode import get_type
 
 """
@@ -63,7 +64,7 @@ def is_markup(location):
         return True
 
     with open(location, 'rb') as f:
-        start = f.read(1024)
+        start = as_unicode(f.read(1024))
 
     if start.startswith('<'):
         return True
@@ -110,7 +111,10 @@ def demarkup_text(text):
 
     # keep the opening tag name of certain tags that contains these strings
     # note: <s> are from debian copyright files
-    kept_tags = ('lic', 'copy', 'www', 'http', 'auth', 'contr', 'leg', 'inc', '@', '<s>', '</s>')
+    kept_tags = (
+        'lic', 'copy', 'www', 'http', 'auth', 'contr', 'leg', 'inc', '@', 
+        '<s>', '</s>', '169', 'a9'
+        )
 
     # find start and closing tags or the first white space whichever comes first
     # or entities

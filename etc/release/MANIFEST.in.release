@@ -1,32 +1,31 @@
-graft src
 graft etc
+graft src
 graft thirdparty
+graft plugins
 graft samples
+graft docs
 
+prune thirdparty/dev
 prune tests
-prune plugins
+prune plugins-builtin
 
-include AUTHORS.rst
-include CHANGELOG.rst
-include README.rst
-include CONTRIBUTING.rst
 include apache-2.0.LICENSE
+include appveyor.yml
+include AUTHORS.rst
 include cc0-1.0.LICENSE
-include NOTICE
-include MANIFEST.in
-include setup.py
-include setup.cfg
-include .gitignore
+include CHANGELOG.rst
 include configure
 include configure.bat
 include CONTRIBUTING.rst
-include MANIFEST.in
-include NOTICE
-include scancode
-include scancode.bat
 include extractcode
 include extractcode.bat
-include .travis.yml appveyor.yml
+include NOTICE
+include README.rst
+include scancode
+include scancode-toolkit.ABOUT
+include scancode.bat
+include setup.cfg
+include setup.py
 
 exclude SCANCODE_DEV_MODE
 

@@ -23,7 +23,7 @@
         "namespace": "aopalliance",
         "name": "aopalliance",
         "version": "1.0",
-        "qualifiers": null,
+        "qualifiers": {},
         "subpath": null,
         "primary_language": "Java",
         "description": "AOP alliance\nAOP Alliance",
@@ -51,7 +51,7 @@
           }
         ],
         "notice_text": null,
-        "manifest_path": "aopalliance-1.0.pom",
+        "root_path": "scan/aopalliance/aopalliance/1.0",
         "dependencies": [],
         "contains_source_code": null,
         "source_packages": [
@@ -63,8 +63,8 @@
         "api_data_url": "https://repo1.maven.org/maven2/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
         "files": [
           {
-            "path": "scan/aopalliance/aopalliance/1.0",
-            "type": "directory"
+            "path": "scan/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
+            "type": "file"
           }
         ]
       },
@@ -73,7 +73,10 @@
         "namespace": null,
         "name": "dmidecode",
         "version": "2.12",
-        "qualifiers": "arch=freebsd:10:x86:64&origin=sysutils/dmidecode",
+        "qualifiers": {
+          "arch": "freebsd:10:x86:64",
+          "origin": "sysutils/dmidecode"
+        },
         "subpath": null,
         "primary_language": null,
         "description": "Dmidecode is a tool or dumping a computer's DMI (some say SMBIOS) table\ncontents in a human-readable format. The output contains a description of the\nsystem's hardware components, as well as other useful pieces of information\nsuch as serial numbers and BIOS revision.\n\nWWW: http://www.nongnu.org/dmidecode/",
@@ -102,9 +105,14 @@
         "vcs_url": null,
         "copyright": null,
         "license_expression": "gpl-2.0",
-        "declared_license": "GPLv2",
+        "declared_license": {
+          "licenses": [
+            "GPLv2"
+          ],
+          "licenselogic": "single"
+        },
         "notice_text": null,
-        "manifest_path": "+COMPACT_MANIFEST",
+        "root_path": "scan/freebsd/basic",
         "dependencies": [],
         "contains_source_code": null,
         "source_packages": [],
@@ -114,8 +122,8 @@
         "api_data_url": null,
         "files": [
           {
-            "path": "scan/freebsd/basic",
-            "type": "directory"
+            "path": "scan/freebsd/basic/+COMPACT_MANIFEST",
+            "type": "file"
           }
         ]
       },
@@ -124,7 +132,7 @@
         "namespace": "@ionic",
         "name": "app-scripts",
         "version": "3.0.1-201710301651",
-        "qualifiers": null,
+        "qualifiers": {},
         "subpath": null,
         "primary_language": "JavaScript",
         "description": "Scripts for Ionic Projects",
@@ -155,7 +163,7 @@
           "MIT"
         ],
         "notice_text": null,
-        "manifest_path": "package.json",
+        "root_path": "scan/scoped1",
         "dependencies": [
           {
             "purl": "pkg:npm/%40angular-devkit/build-optimizer",
@@ -654,8 +662,8 @@
         "api_data_url": "https://registry.npmjs.org/@ionic%2fapp-scripts",
         "files": [
           {
-            "path": "scan/scoped1",
-            "type": "directory"
+            "path": "scan/scoped1/package.json",
+            "type": "file"
           }
         ]
       }
@@ -683,13 +691,19 @@
     {
       "path": "scan/aopalliance/aopalliance/1.0",
       "type": "directory",
+      "packages": [],
+      "scan_errors": []
+    },
+    {
+      "path": "scan/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
+      "type": "file",
       "packages": [
         {
           "type": "maven",
           "namespace": "aopalliance",
           "name": "aopalliance",
           "version": "1.0",
-          "qualifiers": null,
+          "qualifiers": {},
           "subpath": null,
           "primary_language": "Java",
           "description": "AOP alliance\nAOP Alliance",
@@ -717,7 +731,7 @@
             }
           ],
           "notice_text": null,
-          "manifest_path": "aopalliance-1.0.pom",
+          "root_path": "scan/aopalliance/aopalliance/1.0",
           "dependencies": [],
           "contains_source_code": null,
           "source_packages": [
@@ -729,18 +743,12 @@
           "api_data_url": "https://repo1.maven.org/maven2/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
           "files": [
             {
-              "path": "scan/aopalliance/aopalliance/1.0",
-              "type": "directory"
+              "path": "scan/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
+              "type": "file"
             }
           ]
         }
       ],
-      "scan_errors": []
-    },
-    {
-      "path": "scan/aopalliance/aopalliance/1.0/aopalliance-1.0.pom",
-      "type": "file",
-      "packages": [],
       "scan_errors": []
     },
     {
@@ -752,13 +760,22 @@
     {
       "path": "scan/freebsd/basic",
       "type": "directory",
+      "packages": [],
+      "scan_errors": []
+    },
+    {
+      "path": "scan/freebsd/basic/+COMPACT_MANIFEST",
+      "type": "file",
       "packages": [
         {
           "type": "freebsd",
           "namespace": null,
           "name": "dmidecode",
           "version": "2.12",
-          "qualifiers": "arch=freebsd:10:x86:64&origin=sysutils/dmidecode",
+          "qualifiers": {
+            "arch": "freebsd:10:x86:64",
+            "origin": "sysutils/dmidecode"
+          },
           "subpath": null,
           "primary_language": null,
           "description": "Dmidecode is a tool or dumping a computer's DMI (some say SMBIOS) table\ncontents in a human-readable format. The output contains a description of the\nsystem's hardware components, as well as other useful pieces of information\nsuch as serial numbers and BIOS revision.\n\nWWW: http://www.nongnu.org/dmidecode/",
@@ -787,9 +804,14 @@
           "vcs_url": null,
           "copyright": null,
           "license_expression": "gpl-2.0",
-          "declared_license": "GPLv2",
+          "declared_license": {
+            "licenses": [
+              "GPLv2"
+            ],
+            "licenselogic": "single"
+          },
           "notice_text": null,
-          "manifest_path": "+COMPACT_MANIFEST",
+          "root_path": "scan/freebsd/basic",
           "dependencies": [],
           "contains_source_code": null,
           "source_packages": [],
@@ -799,8 +821,8 @@
           "api_data_url": null,
           "files": [
             {
-              "path": "scan/freebsd/basic",
-              "type": "directory"
+              "path": "scan/freebsd/basic/+COMPACT_MANIFEST",
+              "type": "file"
             }
           ]
         }
@@ -808,21 +830,21 @@
       "scan_errors": []
     },
     {
-      "path": "scan/freebsd/basic/+COMPACT_MANIFEST",
-      "type": "file",
+      "path": "scan/scoped1",
+      "type": "directory",
       "packages": [],
       "scan_errors": []
     },
     {
-      "path": "scan/scoped1",
-      "type": "directory",
+      "path": "scan/scoped1/package.json",
+      "type": "file",
       "packages": [
         {
           "type": "npm",
           "namespace": "@ionic",
           "name": "app-scripts",
           "version": "3.0.1-201710301651",
-          "qualifiers": null,
+          "qualifiers": {},
           "subpath": null,
           "primary_language": "JavaScript",
           "description": "Scripts for Ionic Projects",
@@ -853,7 +875,7 @@
             "MIT"
           ],
           "notice_text": null,
-          "manifest_path": "package.json",
+          "root_path": "scan/scoped1",
           "dependencies": [
             {
               "purl": "pkg:npm/%40angular-devkit/build-optimizer",
@@ -1352,18 +1374,12 @@
           "api_data_url": "https://registry.npmjs.org/@ionic%2fapp-scripts",
           "files": [
             {
-              "path": "scan/scoped1",
-              "type": "directory"
+              "path": "scan/scoped1/package.json",
+              "type": "file"
             }
           ]
         }
       ],
-      "scan_errors": []
-    },
-    {
-      "path": "scan/scoped1/package.json",
-      "type": "file",
-      "packages": [],
       "scan_errors": []
     }
   ]

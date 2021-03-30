@@ -37,6 +37,9 @@ from itertools import groupby
 
 from intbitset import intbitset
 
+from commoncode import compat
+
+
 """
 Ranges and intervals of integers using bitmaps.
 Used as a compact and faster data structure for token and position sets.
@@ -107,7 +110,7 @@ class Span(Set):
 
         elif len_args == 1:
             # args0 is a single int or an iterable of ints
-            if isinstance(args[0], (int, long)):
+            if isinstance(args[0], compat.integer_types):
                 self._set = intbitset(args)
             else:
                 # some sequence or iterable
@@ -139,16 +142,24 @@ class Span(Set):
         return self._set == other._set
 
     def __and__(self, *others):
-        return Span(self._set.intersection(*(o._set for o in others)))
+        return Span(self._set.intersection(*[o._set for o in others]))
 
     def __or__(self, *others):
-        return Span(self._set.union(*(o._set for o in others)))
+        return Span(self._set.union(*[o._set for o in others]))
 
     def union(self, *others):
+        """
+        Return the union of this span with other spans as a new span.
+        (i.e. all positions that are in either spans.)
+        """
         return self.__or__(*others)
 
-    def difference(self, other):
-        return self._set.difference(other._set)
+    def difference(self, *others):
+        """
+        Return the difference of two or more spans as a new span.
+        (i.e. all positions that are in this span but not the others.)
+        """
+        return Span(self._set.difference(*[o._set for o in others]))
 
     def __repr__(self):
         """
@@ -196,7 +207,7 @@ class Span(Set):
         if isinstance(other, Span):
             return self._set.issuperset(other._set)
 
-        if isinstance(other, (int, long)):
+        if isinstance(other, compat.integer_types):
             return self._set.__contains__(other)
 
         if isinstance(other, (set, frozenset)):
@@ -204,6 +215,10 @@ class Span(Set):
 
         if isinstance(other, intbitset):
             return self._set.issuperset(other)
+
+    @property
+    def set(self):
+        return self._set
 
     def issubset(self, other):
         return self._set.issubset(other._set)
@@ -434,7 +449,7 @@ class Span(Set):
         """
         ints = sorted(set(ints))
         groups = (group for _, group in groupby(ints, lambda group, c=count(): next(c) - group))
-        return map(Span, groups)
+        return [Span(g) for g in groups]
 
     def subspans(self):
         """

@@ -1,13 +1,11 @@
-expected_failure: yes
 license_expressions:
-  - gpl-1.0-plus
+  - cc-by-3.0 OR gpl-2.0
   - cc-by-3.0
+  - cc-by-4.0 OR cc-by-3.0
+  - cc-by-3.0 AND gpl-2.0
   - cc-by-3.0
-  - gpl-1.0-plus
-  - cc-by-3.0
+  - other-permissive
   - gpl-2.0
-  - gpl-1.0-plus
   - gpl-2.0
-  - gpl-1.0-plus
   - gpl-2.0
-  - gpl-1.0-plus
+  - other-permissive

@@ -150,9 +150,9 @@ def build_description(summary, description):
     return description
 
 
-def combine_expressions(expressions, licensing=Licensing()):
+def combine_expressions(expressions, relation='AND', licensing=Licensing()):
     """
-    Return a combined license expression string with AND, given a list of
+    Return a combined license expression string with relation, given a list of
     license expressions strings.
 
     For example:
@@ -175,10 +175,13 @@ def combine_expressions(expressions, licensing=Licensing()):
                 type(expressions)))
 
     # Remove duplicate element in the expressions list
-    expressions = OrderedDict((x, True) for x in expressions).keys()
+    expressions = list(OrderedDict((x, True) for x in expressions).keys())
 
     if len(expressions) == 1:
         return expressions[0]
 
     expressions = [licensing.parse(le, simple=True) for le in expressions]
-    return str(licensing.AND(*expressions))
+    if relation == 'OR':
+        return str(licensing.OR(*expressions))
+    else:
+        return str(licensing.AND(*expressions))

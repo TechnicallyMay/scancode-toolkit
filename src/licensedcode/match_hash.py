@@ -27,8 +27,12 @@ from __future__ import print_function, absolute_import
 from array import array
 from hashlib import md5
 
-from licensedcode.spans import Span
+from six import string_types
+
+from commoncode.system import py2
+from commoncode.system import py3
 from licensedcode.match import LicenseMatch
+from licensedcode.spans import Span
 
 """
 Matching strategy using hashes to match a whole text chunk at once.
@@ -44,7 +48,7 @@ if TRACE :
     logger = logging.getLogger(__name__)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, basestring) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
     # logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
     logging.basicConfig(stream=sys.stdout)
@@ -61,7 +65,11 @@ def tokens_hash(tokens):
     """
     Return a digest binary string computed from a sequence of numeric token ids.
     """
-    return md5(array('h', tokens).tostring()).digest()
+    if py2:
+        as_bytes = array('h', tokens).tostring()
+    if py3:
+        as_bytes = array('h', tokens).tobytes()
+    return md5(as_bytes).digest()
 
 
 def index_hash(rule_tokens):
@@ -83,11 +91,11 @@ def hash_match(idx, query_run, **kwargs):
     if rid is not None:
         rule = idx.rules_by_rid[rid]
         itokens = idx.tids_by_rid[rid]
-        len_junk = idx.len_junk
+        len_legalese = idx.len_legalese
         logger_debug('match_hash: Match:', rule.identifier)
         qspan = Span(range(query_run.start, query_run.end + 1))
         ispan = Span(range(0, rule.length))
-        hispan = Span(p for p in ispan if itokens[p] >= len_junk)
+        hispan = Span(p for p in ispan if itokens[p] < len_legalese)
         match = LicenseMatch(rule, qspan, ispan, hispan, query_run.start, matcher=MATCH_HASH, query=query_run.query)
         matches.append(match)
     return matches

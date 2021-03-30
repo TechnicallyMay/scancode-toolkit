@@ -1,6 +1,7 @@
 # Document Information
 SPDXVersion: SPDX-2.1
 DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
 DocumentComment: <text>Generated with ScanCode and provided on an "AS IS" BASIS, WITHOUT WARRANTIES
 OR CONDITIONS OF ANY KIND, either express or implied. No content created from
 ScanCode should be considered or used as legal advice. Consult an Attorney
@@ -19,7 +20,7 @@ PackageLicenseInfoFromFiles: CC0-1.0
 PackageLicenseInfoFromFiles: LicenseRef-scancode-other-copyleft
 PackageLicenseInfoFromFiles: LicenseRef-scancode-other-permissive
 PackageLicenseInfoFromFiles: LicenseRef-scancode-scancode-acknowledgment
-PackageCopyrightText: <text>Copyright (c) 2017 nexB Inc. and others.
+PackageCopyrightText: <text>Copyright (c) 2017 nexB Inc. and others
 </text>
 # File
 FileName: ./scan/NOTICE
@@ -30,7 +31,7 @@ LicenseInfoInFile: CC0-1.0
 LicenseInfoInFile: LicenseRef-scancode-other-copyleft
 LicenseInfoInFile: LicenseRef-scancode-other-permissive
 LicenseInfoInFile: LicenseRef-scancode-scancode-acknowledgment
-FileCopyrightText: <text>Copyright (c) 2017 nexB Inc. and others.
+FileCopyrightText: <text>Copyright (c) 2017 nexB Inc. and others
 </text>
 # Extracted Licenses
 LicenseID: LicenseRef-scancode-other-copyleft
@@ -38,8 +39,8 @@ LicenseComment: <text>See details at https://github.com/nexB/scancode-toolkit/bl
 </text>
 ExtractedText: <text>Software license
 ================
-[Copyright] ([c]) [2017] [nexB] [Inc]. [and] [others]. [All] [rights] [reserved].
-[http]://[nexb].[com] [and] [https]://[github].[com]/[nexB]/[scancode]-[toolkit]/
+Copyright (c) 2017 nexB Inc. and others. All rights reserved.
+http://nexb.com and https://github.com/nexB/scancode-toolkit/
 The ScanCode software is licensed under the Apache License version 2.0.
 Data generated with ScanCode require an acknowledgment.
 ScanCode is a trademark of nexB Inc.
@@ -69,8 +70,8 @@ https://github.com/nexB/scancode-toolkit/
 or https://github.com/nexB/scancode-thirdparty-src/
 You may also contact us to request the source code by email at info@nexb.com or
 by postal mail at:
-  [nexB] [Inc]., [ScanCode] [open] [source] [code] [request]
-  [735] [Industrial] [Road], [Suite] #[101], [94070] [San] [Carlos], [CA], [USA]
+  nexB Inc., ScanCode open source code request
+  735 Industrial Road, Suite #101, 94070 San Carlos, CA, USA
 Please indicate in your communication the ScanCode version for which you are
 requesting source code.
 License for ScanCode datasets
@@ -83,8 +84,8 @@ LicenseComment: <text>See details at https://github.com/nexB/scancode-toolkit/bl
 </text>
 ExtractedText: <text>Software license
 ================
-[Copyright] ([c]) [2017] [nexB] [Inc]. [and] [others]. [All] [rights] [reserved].
-[http]://[nexb].[com] [and] [https]://[github].[com]/[nexB]/[scancode]-[toolkit]/
+Copyright (c) 2017 nexB Inc. and others. All rights reserved.
+http://nexb.com and https://github.com/nexB/scancode-toolkit/
 The ScanCode software is licensed under the Apache License version 2.0.
 Data generated with ScanCode require an acknowledgment.
 ScanCode is a trademark of nexB Inc.
@@ -114,8 +115,8 @@ https://github.com/nexB/scancode-toolkit/
 or https://github.com/nexB/scancode-thirdparty-src/
 You may also contact us to request the source code by email at info@nexb.com or
 by postal mail at:
-  [nexB] [Inc]., [ScanCode] [open] [source] [code] [request]
-  [735] [Industrial] [Road], [Suite] #[101], [94070] [San] [Carlos], [CA], [USA]
+  nexB Inc., ScanCode open source code request
+  735 Industrial Road, Suite #101, 94070 San Carlos, CA, USA
 Please indicate in your communication the ScanCode version for which you are
 requesting source code.
 License for ScanCode datasets
@@ -128,8 +129,8 @@ LicenseComment: <text>See details at https://github.com/nexB/scancode-toolkit/bl
 </text>
 ExtractedText: <text>Software license
 ================
-[Copyright] ([c]) [2017] [nexB] [Inc]. [and] [others]. [All] [rights] [reserved].
-[http]://[nexb].[com] [and] [https]://[github].[com]/[nexB]/[scancode]-[toolkit]/
+Copyright (c) 2017 nexB Inc. and others. All rights reserved.
+http://nexb.com and https://github.com/nexB/scancode-toolkit/
 The ScanCode software is licensed under the Apache License version 2.0.
 Data generated with ScanCode require an acknowledgment.
 ScanCode is a trademark of nexB Inc.
@@ -159,8 +160,8 @@ https://github.com/nexB/scancode-toolkit/
 or https://github.com/nexB/scancode-thirdparty-src/
 You may also contact us to request the source code by email at info@nexb.com or
 by postal mail at:
-  [nexB] [Inc]., [ScanCode] [open] [source] [code] [request]
-  [735] [Industrial] [Road], [Suite] #[101], [94070] [San] [Carlos], [CA], [USA]
+  nexB Inc., ScanCode open source code request
+  735 Industrial Road, Suite #101, 94070 San Carlos, CA, USA
 Please indicate in your communication the ScanCode version for which you are
 requesting source code.
 License for ScanCode datasets

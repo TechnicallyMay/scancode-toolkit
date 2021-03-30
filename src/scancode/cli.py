@@ -36,34 +36,51 @@ import scancode_config
 from collections import defaultdict
 from collections import OrderedDict
 from functools import partial
+import os
+import logging
+import sys
+from time import sleep
+from time import time
+import traceback
 
 # Python 2 and 3 support
 try:
     # Python 2
-    import itertools.imap as map #NOQA
+    import itertools.imap as map  # NOQA
 except ImportError:
     # Python 3
     pass
 
-import os
-import sys
-from time import time
-import traceback
+# this exception is not available on posix
+try:
+    WindowsError  # NOQA
+except NameError:
+    class WindowsError(Exception):
+        pass
 
-import click
+import click  # NOQA
 click.disable_unicode_literals_warning = True
 
-# import early
-from scancode_config import __version__ as scancode_version
+from six import string_types
 
+from commoncode import cliutils
+from commoncode.cliutils import GroupedHelpCommand
+from commoncode.cliutils import path_progress_message
+from commoncode.cliutils import progressmanager
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode import compat
 from commoncode.fileutils import as_posixpath
 from commoncode.fileutils import PATH_TYPE
 from commoncode.fileutils import POSIX_PATH_SEP
 from commoncode.timeutils import time2tstamp
-
-from plugincode import PluginManager
+from commoncode.resource import Codebase
+from commoncode.resource import VirtualCodebase
+from commoncode.system import py2
+from commoncode.system import on_windows
+from commoncode.system import on_linux
 
 # these are important to register plugin managers
+from plugincode import PluginManager
 from plugincode import pre_scan
 from plugincode import scan
 from plugincode import post_scan
@@ -72,44 +89,14 @@ from plugincode import output
 
 from scancode import ScancodeError
 from scancode import ScancodeCliUsageError
-from scancode import CORE_GROUP
-from scancode import DOC_GROUP
-from scancode import MISC_GROUP
-from scancode import OTHER_SCAN_GROUP
-from scancode import OUTPUT_GROUP
-from scancode import OUTPUT_FILTER_GROUP
-from scancode import OUTPUT_CONTROL_GROUP
-from scancode import POST_SCAN_GROUP
-from scancode import PRE_SCAN_GROUP
-from scancode import SCAN_GROUP
-from scancode import SCAN_OPTIONS_GROUP
-from scancode import CommandLineOption
 from scancode import notice
 from scancode import print_about
 from scancode import Scanner
-from scancode import validate_option_dependencies
 from scancode.help import epilog_text
 from scancode.help import examples_text
 from scancode.interrupt import DEFAULT_TIMEOUT
 from scancode.interrupt import fake_interruptible
 from scancode.interrupt import interruptible
-from scancode.resource import Codebase
-from scancode.resource import VirtualCodebase
-from scancode.utils import BaseCommand
-from scancode.utils import path_progress_message
-from scancode.utils import progressmanager
-
-
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str_orig = str
-    bytes = str  # NOQA
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 
 # Tracing flags
@@ -122,14 +109,12 @@ def logger_debug(*args):
 
 
 if TRACE or TRACE_DEEP:
-    import logging
-
     logger = logging.getLogger(__name__)
     logging.basicConfig(stream=sys.stdout)
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode)
+        return logger.debug(' '.join(isinstance(a, string_types)
                                      and a or repr(a) for a in args))
 
 echo_stderr = partial(click.secho, err=True)
@@ -145,78 +130,23 @@ def print_examples(ctx, param, value):
 def print_version(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
-    click.echo('ScanCode version ' + scancode_version)
+    click.echo('ScanCode version ' + scancode_config.__version__)
     ctx.exit()
 
 
-class ScanCommand(BaseCommand):
-    """
-    A command class that is aware of ScanCode options that provides enhanced
-    help where each option is grouped by group.
-    """
-
+class ScancodeCommand(GroupedHelpCommand):
     short_usage_help = '''
-Try 'scancode --help' for help on options and arguments.'''
-
-    def __init__(self, name, context_settings=None, callback=None, params=None,
-                 help=None,  # NOQA
-                 epilog=None, short_help=None,
-                 options_metavar='[OPTIONS]', add_help_option=True,
-                 plugin_options=()):
-        """
-        Create a new ScanCommand using the `plugin_options` list of
-        CommandLineOption instances.
-        """
-
-        super(ScanCommand, self).__init__(name, context_settings, callback,
-             params, help, epilog, short_help, options_metavar, add_help_option)
-
-        # this makes the options "known" to the command
-        self.params.extend(plugin_options)
-
-    def format_options(self, ctx, formatter):
-        """
-        Overridden from click.Command to write all options into the formatter in
-        help_groups they belong to. If a group is not specified, add the option
-        to MISC_GROUP group.
-        """
-        # this mapping defines the CLI help presentation order
-        help_groups = OrderedDict([
-            (SCAN_GROUP, []),
-            (OTHER_SCAN_GROUP, []),
-            (SCAN_OPTIONS_GROUP, []),
-            (OUTPUT_GROUP, []),
-            (OUTPUT_FILTER_GROUP, []),
-            (OUTPUT_CONTROL_GROUP, []),
-            (PRE_SCAN_GROUP, []),
-            (POST_SCAN_GROUP, []),
-            (CORE_GROUP, []),
-            (MISC_GROUP, []),
-            (DOC_GROUP, []),
-        ])
-
-        for param in self.get_params(ctx):
-            # Get the list of option's name and help text
-            help_record = param.get_help_record(ctx)
-            if not help_record:
-                continue
-            # organize options by group
-            help_group = getattr(param, 'help_group', MISC_GROUP)
-            sort_order = getattr(param, 'sort_order', 100)
-            help_groups[help_group].append((sort_order, help_record))
-
-        with formatter.section('Options'):
-            for group, help_records in help_groups.items():
-                if not help_records:
-                    continue
-                with formatter.section(group):
-                    sorted_records = [help_record for _, help_record in sorted(help_records)]
-                    formatter.write_dl(sorted_records)
+Try the 'scancode --help' option for help on options and arguments.'''
 
 
 try:
     # IMPORTANT: this discovers, loads and validates all available plugins
     plugin_classes, plugin_options = PluginManager.load_plugins()
+    if TRACE:
+        logger_debug('plugin_options:')
+        for clio in plugin_options:
+            logger_debug('   ', clio)
+            logger_debug('name:', clio.name, 'default:', clio.default)
 except ImportError as e:
     echo_stderr('========================================================================')
     echo_stderr('ERROR: Unable to import ScanCode plugins.'.upper())
@@ -264,10 +194,14 @@ def print_options(ctx, param, value):
     click.echo('')
     ctx.exit()
 
+def validate_depth(ctx, param, value):
+    if value < 0:
+        raise click.BadParameter("max-depth needs to be a positive integer or 0")
+    return value
 
 @click.command(name='scancode',
     epilog=epilog_text,
-    cls=ScanCommand,
+    cls=ScancodeCommand,
     plugin_options=plugin_options)
 
 @click.pass_context
@@ -283,50 +217,52 @@ def print_options(ctx, param, value):
     help='Strip the root directory segment of all paths. The default is to '
          'always include the last directory segment of the scanned path such '
          'that all paths have a common root directory.',
-    help_group=OUTPUT_CONTROL_GROUP, cls=CommandLineOption)
+    help_group=cliutils.OUTPUT_CONTROL_GROUP, cls=PluggableCommandLineOption)
 
 @click.option('--full-root',
     is_flag=True,
     conflicting_options=['strip_root'],
     help='Report full, absolute paths.',
-    help_group=OUTPUT_CONTROL_GROUP, cls=CommandLineOption)
+    help_group=cliutils.OUTPUT_CONTROL_GROUP, cls=PluggableCommandLineOption)
 
 @click.option('-n', '--processes',
     type=int, default=1,
     metavar='INT',
     help='Set the number of parallel processes to use. '
          'Disable parallel processing if 0. Also disable threading if -1. [default: 1]',
-    help_group=CORE_GROUP, sort_order=10, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=10, cls=PluggableCommandLineOption)
 
 @click.option('--timeout',
     type=float, default=DEFAULT_TIMEOUT,
     metavar='<secs>',
     help='Stop an unfinished file scan after a timeout in seconds.  '
          '[default: %d seconds]' % DEFAULT_TIMEOUT,
-    help_group=CORE_GROUP, sort_order=10, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=10, cls=PluggableCommandLineOption)
 
 @click.option('--quiet',
     is_flag=True,
     conflicting_options=['verbose'],
     help='Do not print summary or progress.',
-    help_group=CORE_GROUP, sort_order=20, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=20, cls=PluggableCommandLineOption)
 
 @click.option('--verbose',
     is_flag=True,
     conflicting_options=['quiet'],
     help='Print progress as file-by-file path instead of a progress bar. '
          'Print verbose scan counters.',
-    help_group=CORE_GROUP, sort_order=20, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=20, cls=PluggableCommandLineOption)
 
 @click.option('--from-json',
     is_flag=True,
+    multiple=True,
     help='Load codebase from an existing JSON scan',
-    help_group=CORE_GROUP, sort_order=25, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=25, cls=PluggableCommandLineOption)
 
 @click.option('--timing',
     is_flag=True,
+    hidden=True,
     help='Collect scan timing for each scan/scanned file.',
-    help_group=CORE_GROUP, sort_order=250, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=250, cls=PluggableCommandLineOption)
 
 @click.option('--max-in-memory',
     type=int, default=10000,
@@ -337,64 +273,88 @@ def print_options(ctx, param, value):
     'number are cached on-disk rather than in memory. '
     'Use 0 to use unlimited memory and disable on-disk caching. '
     'Use -1 to use only on-disk caching.',
-    help_group=CORE_GROUP, sort_order=300, cls=CommandLineOption)
+    help_group=cliutils.CORE_GROUP, sort_order=300, cls=PluggableCommandLineOption)
+
+@click.option('--max-depth',
+    type=int, default=0, show_default=False, callback=validate_depth,
+    help='Maximum nesting depth of subdirectories to scan. '
+        'Descend at most INTEGER levels of directories below and including '
+        'the starting directory. Use 0 for no scan depth limit.',
+    help_group=cliutils.CORE_GROUP, sort_order=301, cls=PluggableCommandLineOption)
 
 @click.help_option('-h', '--help',
-    help_group=DOC_GROUP, sort_order=10, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, sort_order=10, cls=PluggableCommandLineOption)
 
 @click.option('--about',
     is_flag=True, is_eager=True, expose_value=False,
     callback=print_about,
     help='Show information about ScanCode and licensing and exit.',
-    help_group=DOC_GROUP, sort_order=20, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, sort_order=20, cls=PluggableCommandLineOption)
 
 @click.option('--version',
     is_flag=True, is_eager=True, expose_value=False,
     callback=print_version,
     help='Show the version and exit.',
-    help_group=DOC_GROUP, sort_order=20, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, sort_order=20, cls=PluggableCommandLineOption)
 
 @click.option('--examples',
     is_flag=True, is_eager=True, expose_value=False,
     callback=print_examples,
     help=('Show command examples and exit.'),
-    help_group=DOC_GROUP, sort_order=50, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, sort_order=50, cls=PluggableCommandLineOption)
 
 @click.option('--plugins',
     is_flag=True, is_eager=True, expose_value=False,
     callback=print_plugins,
     help='Show the list of available ScanCode plugins and exit.',
-    help_group=DOC_GROUP, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, cls=PluggableCommandLineOption)
 
 @click.option('--test-mode',
     is_flag=True, default=False,
-    # not yet supported in Click 6.7 but added in CommandLineOption
+    # not yet supported in Click 6.7 but added in PluggableCommandLineOption
     hidden=True,
     help='Run ScanCode in a special "test mode". Only for testing.',
-    help_group=MISC_GROUP, sort_order=1000, cls=CommandLineOption)
+    help_group=cliutils.MISC_GROUP, sort_order=1000, cls=PluggableCommandLineOption)
+
+@click.option('--test-slow-mode',
+    is_flag=True, default=False,
+    # not yet supported in Click 6.7 but added in PluggableCommandLineOption
+    hidden=True,
+    help='Run ScanCode in a special "test slow mode" to ensure that --email scan needs at least one second to complete. Only for testing.',
+    help_group=cliutils.MISC_GROUP, sort_order=1000, cls=PluggableCommandLineOption)
+
+@click.option('--test-error-mode',
+    is_flag=True, default=False,
+    # not yet supported in Click 6.7 but added in PluggableCommandLineOption
+    hidden=True,
+    help='Run ScanCode in a special "test error mode" to trigger errors with the --email scan. Only for testing.',
+    help_group=cliutils.MISC_GROUP, sort_order=1000, cls=PluggableCommandLineOption)
 
 @click.option('--print-options',
     is_flag=True,
     expose_value=False,
     callback=print_options,
     help='Show the list of selected options and exit.',
-    help_group=DOC_GROUP, cls=CommandLineOption)
+    help_group=cliutils.DOC_GROUP, cls=PluggableCommandLineOption)
 
 @click.option('--keep-temp-files',
     is_flag=True, default=False,
     help='Keep temporary files and show the directory where temporary files '
          'are stored. (By default temporary files are deleted when a scan is '
          'completed.)',
-    help_group=MISC_GROUP, sort_order=1000, cls=CommandLineOption)
+    hidden=True,
+    help_group=cliutils.MISC_GROUP, sort_order=1000, cls=PluggableCommandLineOption)
 
 def scancode(ctx, input,  # NOQA
              strip_root, full_root,
              processes, timeout,
-             quiet, verbose,
+             quiet, verbose, max_depth,
              from_json,
              timing,
              max_in_memory,
              test_mode,
+             test_slow_mode,
+             test_error_mode,
              keep_temp_files,
              echo_func=echo_stderr,
              *args, **kwargs):
@@ -464,6 +424,10 @@ def scancode(ctx, input,  # NOQA
     through Click context machinery.
     """
 
+    # configure a null root handler ONLY when used as a command line
+    # otherwise no root handler is set
+    logging.getLogger().addHandler(logging.NullHandler())
+
     success = False
     try:
         # Validate CLI UI options dependencies and other CLI-specific inits
@@ -472,7 +436,7 @@ def scancode(ctx, input,  # NOQA
             for co in sorted(ctx.params.items()):
                 logger_debug('  scancode: ctx.params:', co)
 
-        validate_option_dependencies(ctx)
+        cliutils.validate_option_dependencies(ctx)
         pretty_params = get_pretty_params(ctx, generic_paths=test_mode)
 
         # run proper
@@ -481,9 +445,11 @@ def scancode(ctx, input,  # NOQA
             from_json=from_json,
             strip_root=strip_root, full_root=full_root,
             processes=processes, timeout=timeout,
-            quiet=quiet, verbose=verbose,
+            quiet=quiet, verbose=verbose, max_depth=max_depth,
             timing=timing, max_in_memory=max_in_memory,
             test_mode=test_mode,
+            test_slow_mode=test_slow_mode,
+            test_error_mode=test_error_mode,
             keep_temp_files=keep_temp_files,
             pretty_params=pretty_params,
             # results are saved to file, no need to get them back in a cli context
@@ -491,13 +457,19 @@ def scancode(ctx, input,  # NOQA
             echo_func=echo_stderr,
             *args, **kwargs)
 
+        # check for updates
+        from scancode.outdated import check_scancode_version
+        outdated = check_scancode_version()
+        if not quiet and outdated:
+            echo_stderr(outdated, fg='yellow')
+
     except click.UsageError as e:
         # this will exit
         raise e
 
     except ScancodeError as se:
         # this will exit
-        raise click.BadParameter(se.message)
+        raise click.BadParameter(str(se))
 
     rc = 0 if success else 1
     ctx.exit(rc)
@@ -513,12 +485,16 @@ def run_scan(
         timeout=120,
         quiet=True,
         verbose=False,
+        max_depth=0,
         echo_func=None,
         timing=False,
         keep_temp_files=False,
         return_results=True,
         test_mode=False,
+        test_slow_mode=False,
+        test_error_mode=False,
         pretty_params=None,
+        plugin_options=plugin_options,
         *args, **kwargs):
     """
     Run a scan on `input` path (or a list of input paths) and return a tuple of
@@ -527,6 +503,10 @@ def run_scan(
     results but as native Python. Raise Exceptions (e.g. ScancodeError) on
     error. See scancode() for arguments details.
     """
+
+    plugins_option_defaults = {clio.name: clio.default for clio in plugin_options}
+    requested_options = dict(plugins_option_defaults)
+    requested_options.update(kwargs)
 
     if not echo_func:
         def echo_func(*_args, **_kwargs):
@@ -538,12 +518,20 @@ def run_scan(
 
     if not isinstance(input, (list, tuple)):
         # nothing else todo
-        assert isinstance(input, (bytes, unicode))
+        if on_linux and py2:
+            assert isinstance(input, bytes)
+        else:
+            assert isinstance(input, compat.unicode)
 
     elif len(input) == 1:
         # we received a single input path, so we treat this as a single path
         input = input[0]  # NOQA
-    else:
+
+    # This is the case where we have a list of inputs, but the list of inputs are not from the
+    # `from_json` option. If the `from_json` option is available and we have a list of inputs
+    # from it, we can pass `input` just fine when we create a VirtualCodebase, otherwise we have to
+    # process `input` below.
+    elif not from_json:
         # we received a several input paths: we can handle this IFF they share
         # a common root directory and none is an absolute path
 
@@ -568,15 +556,15 @@ def run_scan(
         # the input list of paths
         included_paths = [as_posixpath(path).rstrip(POSIX_PATH_SEP) for path in input]
         # FIXME: this is a hack as this "include" is from an external plugin!!!1
-        include = list(kwargs.get('include', []) or [])
+        include = list(requested_options.get('include', []) or [])
         include.extend(included_paths)
-        kwargs['include'] = include
+        requested_options['include'] = include
 
         # ... and use the common prefix as our new input
         input = common_prefix  # NOQA
 
-    # build mappings of all kwargs to pass down to plugins
-    standard_kwargs = dict(
+    # build mappings of all options to pass down to plugins
+    standard_options = dict(
         input=input,
         strip_root=strip_root,
         full_root=full_root,
@@ -587,9 +575,11 @@ def run_scan(
         from_json=from_json,
         timing=timing,
         max_in_memory=max_in_memory,
-        test_mode=test_mode
+        test_mode=test_mode,
+        test_slow_mode=test_slow_mode,
+        test_error_mode=test_error_mode,
     )
-    kwargs.update(standard_kwargs)
+    requested_options.update(standard_options)
 
     success = True
     results = None
@@ -621,10 +611,10 @@ def run_scan(
                 try:
                     name = plugin_cls.name
                     qname = plugin_cls.qname()
-                    plugin = plugin_cls(**kwargs)
+                    plugin = plugin_cls(**requested_options)
                     is_enabled = False
                     try:
-                        is_enabled = plugin.is_enabled(**kwargs)
+                        is_enabled = plugin.is_enabled(**requested_options)
                     except TypeError as te:
                         if not 'takes exactly' in str(te):
                             raise te
@@ -709,7 +699,7 @@ def run_scan(
                 echo_func(' Setup plugin: %(stage)s:%(name)s...' % locals(),
                             fg='green')
             try:
-                plugin.setup(**kwargs)
+                plugin.setup(**requested_options)
             except:
                 msg = 'ERROR: failed to setup plugin: %(stage)s:%(name)s:' % locals()
                 raise ScancodeError(msg + '\n' + traceback.format_exc())
@@ -727,7 +717,7 @@ def run_scan(
 
         # mapping of {"plugin stage:name": [list of attribute keys]}
         # also available as a kwarg entry for plugin
-        kwargs['resource_attributes_by_plugin'] = resource_attributes_by_plugin = {}
+        requested_options['resource_attributes_by_plugin'] = resource_attributes_by_plugin = {}
         for stage, stage_plugins in enabled_plugins_by_stage.items():
             for plugin in stage_plugins:
                 name = plugin.name
@@ -763,7 +753,7 @@ def run_scan(
 
         # mapping of {"plugin stage:name": [list of attribute keys]}
         # also available as a kwarg entry for plugin
-        kwargs['codebase_attributes_by_plugin'] = codebase_attributes_by_plugin = {}
+        requested_options['codebase_attributes_by_plugin'] = codebase_attributes_by_plugin = {}
         for stage, stage_plugins in enabled_plugins_by_stage.items():
             for plugin in stage_plugins:
                 name = plugin.name
@@ -818,7 +808,8 @@ def run_scan(
                 codebase_attributes=codebase_attributes,
                 full_root=full_root,
                 strip_root=strip_root,
-                max_in_memory=max_in_memory
+                max_in_memory=max_in_memory,
+                max_depth=max_depth,
             )
         except:
             msg = 'ERROR: failed to collect codebase at: %(input)r' % locals()
@@ -828,7 +819,7 @@ def run_scan(
         cle = codebase.get_or_create_current_header()
         cle.start_timestamp = start_timestamp
         cle.tool_name = 'scancode-toolkit'
-        cle.tool_version = scancode_version
+        cle.tool_version = scancode_config.__version__
         cle.notice = notice
         cle.options = pretty_params or {}
 
@@ -850,7 +841,7 @@ def run_scan(
             stage='pre-scan', plugins=pre_scan_plugins, codebase=codebase,
             stage_msg='Run %(stage)ss...',
             plugin_msg=' Run %(stage)s: %(name)s...',
-            quiet=quiet, verbose=verbose, kwargs=kwargs, echo_func=echo_func,
+            quiet=quiet, verbose=verbose, kwargs=requested_options, echo_func=echo_func,
         )
         success = success and pre_scan_success
 
@@ -861,7 +852,7 @@ def run_scan(
         scan_success = run_scanners(
             stage='scan', plugins=scanner_plugins, codebase=codebase,
             processes=processes, timeout=timeout, timing=timeout,
-            quiet=quiet, verbose=verbose, kwargs=kwargs, echo_func=echo_func,
+            quiet=quiet, verbose=verbose, kwargs=requested_options, echo_func=echo_func,
         )
         success = success and scan_success
 
@@ -873,7 +864,7 @@ def run_scan(
         post_scan_success = run_codebase_plugins(
             stage='post-scan', plugins=post_scan_plugins, codebase=codebase,
             stage_msg='Run %(stage)ss...', plugin_msg=' Run %(stage)s: %(name)s...',
-            quiet=quiet, verbose=verbose, kwargs=kwargs, echo_func=echo_func,
+            quiet=quiet, verbose=verbose, kwargs=requested_options, echo_func=echo_func,
         )
         success = success and post_scan_success
 
@@ -885,7 +876,7 @@ def run_scan(
         output_filter_success = run_codebase_plugins(
             stage='output-filter', plugins=output_filter_plugins, codebase=codebase,
             stage_msg='Apply %(stage)ss...', plugin_msg=' Apply %(stage)s: %(name)s...',
-            quiet=quiet, verbose=verbose, kwargs=kwargs, echo_func=echo_func,
+            quiet=quiet, verbose=verbose, kwargs=requested_options, echo_func=echo_func,
         )
         success = success and output_filter_success
 
@@ -901,6 +892,7 @@ def run_scan(
         codebase.counters['final:size_count'] = size_count
 
         cle.end_timestamp = time2tstamp()
+        cle.duration = time() - processing_start
         # collect these once as they are use in the headers and in the displayed summary
         errors = collect_errors(codebase, verbose)
         cle.errors = errors
@@ -913,7 +905,7 @@ def run_scan(
                 stage='output', plugins=output_plugins, codebase=codebase,
                 stage_msg='Save scan results...',
                 plugin_msg=' Save scan results as: %(name)s...',
-                quiet=quiet, verbose=verbose, kwargs=kwargs, echo_func=echo_func,
+                quiet=quiet, verbose=verbose, kwargs=requested_options, echo_func=echo_func,
             )
             success = success and output_success
 
@@ -927,7 +919,7 @@ def run_scan(
             scan_names = ', '.join(p.name for p in scanner_plugins)
             echo_func('Scanning done.', fg='green' if success else 'red')
             display_summary(codebase, scan_names, processes, errors=errors,
-                            verbose=verbose, echo_func=echo_func)
+                            echo_func=echo_func)
 
         ########################################################################
         # 10. optionally assemble results to return
@@ -935,7 +927,7 @@ def run_scan(
         if return_results:
             # the structure is exactly the same as the JSON output
             from formattedcode.output_json import get_results
-            results = get_results(codebase, as_list=True, **kwargs)
+            results = get_results(codebase, as_list=True, **requested_options)
 
     finally:
         # remove temporary files
@@ -1142,7 +1134,10 @@ def scan_codebase(codebase, scanners, processes=1, timeout=DEFAULT_TIMEOUT,
 
         while True:
             try:
-                location, rid, scan_errors, scan_time, scan_result, scan_timings = scans.next()
+                if py2:
+                    location, rid, scan_errors, scan_time, scan_result, scan_timings = scans.next()
+                else:
+                    location, rid, scan_errors, scan_time, scan_result, scan_timings = next(scans)
 
                 if TRACE_DEEP:
                     logger_debug(
@@ -1189,20 +1184,40 @@ def scan_codebase(codebase, scanners, processes=1, timeout=DEFAULT_TIMEOUT,
             except KeyboardInterrupt:
                 echo_func('\nAborted with Ctrl+C!', fg='red')
                 success = False
-                if pool:
-                    pool.terminate()
+                terminate_pool(pool)
                 break
 
     finally:
-        if pool:
-            # ensure the pool is really dead to work around a Python 2.7.3 bug:
-            # http://bugs.python.org/issue15101
-            pool.terminate()
+        # ensure the pool is really dead to work around a Python 2.7.3 bug:
+        # http://bugs.python.org/issue15101
+        terminate_pool(pool)
 
         if scans and hasattr(scans, 'render_finish'):
             # hack to avoid using a context manager
             scans.render_finish()
     return success
+
+
+def terminate_pool(pool):
+    """
+    Invoke terminate() on a process pool and deal with possible Windows issues.
+    """
+    if not pool:
+        return
+    if on_windows:
+        terminate_pool_with_backoff(pool)
+    else:
+        pool.terminate()
+
+
+def terminate_pool_with_backoff(pool, number_of_trials=3):
+    # try a few times to terminate,
+    for trial in range(number_of_trials, 1):
+        try:
+            pool.terminate()
+            break
+        except WindowsError:
+            sleep(trial)
 
 
 def scan_resource(location_rid, scanners, timeout=DEFAULT_TIMEOUT,
@@ -1237,13 +1252,23 @@ def scan_resource(location_rid, scanners, timeout=DEFAULT_TIMEOUT,
     else:
         interruptor = interruptible
 
+    # The timeout is a soft deadline for a scanner to stop processing
+    # and start returning values. The kill timeout is otherwise there
+    # as a gatekeeper for runaway processes.
+
     # run each scanner in sequence in its own interruptible
     for scanner in scanners:
         if with_timing:
             start = time()
 
         try:
-            runner = partial(scanner.function, location)
+            # pass a deadline that the scanner can opt to honor or not
+            if timeout:
+                deadline = time() + int(timeout / 2.5)
+            else:
+                deadline = sys.maxsize
+
+            runner = partial(scanner.function, location, deadline=deadline)
             error, values_mapping = interruptor(runner, timeout=timeout)
             if error:
                 msg = 'ERROR: for scanner: ' + scanner.name + ':\n' + error
@@ -1264,9 +1289,21 @@ def scan_resource(location_rid, scanners, timeout=DEFAULT_TIMEOUT,
     return location, rid, scan_errors, scan_time, results, timings
 
 
-def display_summary(codebase, scan_names, processes, errors, verbose, echo_func=echo_stderr):
+def display_summary(codebase, scan_names, processes, errors, echo_func=echo_stderr):
     """
     Display a scan summary.
+    """
+    error_messages, summary_messages = get_displayable_summary(
+        codebase, scan_names, processes, errors)
+    for msg in error_messages:
+        echo_func(msg, fg='red')
+
+    for msg in summary_messages:
+        echo_func(msg)
+
+def get_displayable_summary(codebase, scan_names, processes, errors):
+    """
+    Return displayable summary messages
     """
     initial_files_count = codebase.counters.get('initial:files_count', 0)
     initial_dirs_count = codebase.counters.get('initial:dirs_count', 0)
@@ -1336,44 +1373,47 @@ def display_summary(codebase, scan_names, processes, errors, verbose, echo_func=
 
     ######################################################################
 
+    error_messages = []
     errors_count = len(errors)
     if errors:
-        echo_func('Some files failed to scan properly:', fg='red')
+        error_messages.append('Some files failed to scan properly:')
         for error in errors:
             for me in error.splitlines(False):
-                echo_func(me , fg='red')
+                error_messages.append(me)
 
     ######################################################################
 
-    echo_func('Summary:        %(scan_names)s with %(processes)d process(es)' % locals())
-    echo_func('Errors count:   %(errors_count)d' % locals())
-    echo_func('Scan Speed:     %(scan_file_speed).2f files/sec. %(scan_size_speed)s' % locals())
+    summary_messages = []
+    summary_messages.append('Summary:        %(scan_names)s with %(processes)d process(es)' % locals())
+    summary_messages.append('Errors count:   %(errors_count)d' % locals())
+    summary_messages.append('Scan Speed:     %(scan_file_speed).2f files/sec. %(scan_size_speed)s' % locals())
     if prescan_scan_time:
-        echo_func('Early Scanners Speed:     %(prescan_scan_file_speed).2f '
+        summary_messages.append('Early Scanners Speed:     %(prescan_scan_file_speed).2f '
                     'files/sec. %(prescan_scan_size_speed)s' % locals())
 
-    echo_func('Initial counts: %(initial_res_count)d resource(s): '
+    summary_messages.append('Initial counts: %(initial_res_count)d resource(s): '
                                '%(initial_files_count)d file(s) '
                                'and %(initial_dirs_count)d directorie(s) '
                                '%(initial_size_count)s' % locals())
 
-    echo_func('Final counts:   %(final_res_count)d resource(s): '
+    summary_messages.append('Final counts:   %(final_res_count)d resource(s): '
                                '%(final_files_count)d file(s) '
                                'and %(final_dirs_count)d directorie(s) '
                                '%(final_size_count)s' % locals())
 
-    echo_func('Timings:')
+    summary_messages.append('Timings:')
 
     cle = codebase.get_or_create_current_header().to_dict()
-    echo_func('  scan_start: {start_timestamp}'.format(**cle))
-    echo_func('  scan_end:   {end_timestamp}'.format(**cle))
+    summary_messages.append('  scan_start: {start_timestamp}'.format(**cle))
+    summary_messages.append('  scan_end:   {end_timestamp}'.format(**cle))
 
     for name, value, in codebase.timings.items():
         if value > 0.1:
-            echo_func('  %(name)s: %(value).2fs' % locals())
+            summary_messages.append('  %(name)s: %(value).2fs' % locals())
 
     # TODO: if timing was requested display top per-scan/per-file stats?
 
+    return error_messages, summary_messages
 
 def collect_errors(codebase, verbose=False):
     """
@@ -1403,28 +1443,17 @@ def format_size(size):
     Return a human-readable value for the `size` int or float.
 
     For example:
-    >>> format_size(0)
-    u'0 Byte'
-    >>> format_size(1)
-    u'1 Byte'
-    >>> format_size(0.123)
-    u'0.1 Byte'
-    >>> format_size(123)
-    u'123 Bytes'
-    >>> format_size(1023)
-    u'1023 Bytes'
-    >>> format_size(1024)
-    u'1 KB'
-    >>> format_size(2567)
-    u'2.51 KB'
-    >>> format_size(2567000)
-    u'2.45 MB'
-    >>> format_size(1024*1024)
-    u'1 MB'
-    >>> format_size(1024*1024*1024)
-    u'1 GB'
-    >>> format_size(1024*1024*1024*12.3)
-    u'12.30 GB'
+    >>> assert format_size(0) == '0 Byte'
+    >>> assert format_size(1) == '1 Byte'
+    >>> assert format_size(0.123) == '0.1 Byte'
+    >>> assert format_size(123) == '123 Bytes'
+    >>> assert format_size(1023) == '1023 Bytes'
+    >>> assert format_size(1024) == '1 KB'
+    >>> assert format_size(2567) == '2.51 KB'
+    >>> assert format_size(2567000) == '2.45 MB'
+    >>> assert format_size(1024*1024) == '1 MB'
+    >>> assert format_size(1024*1024*1024) == '1 GB'
+    >>> assert format_size(1024*1024*1024*12.3) == '12.30 GB'
     """
     if not size:
         return '0 Byte'
@@ -1497,7 +1526,7 @@ def get_pretty_params(ctx, generic_paths=False):
 
         # coerce to string for non-basic supported types
         if not (value in (True, False, None)
-            or isinstance(value, (str, unicode, bytes, tuple, list, dict, OrderedDict))):
+            or isinstance(value, (str, string_types, bytes, tuple, list, dict, OrderedDict))):
             value = repr(value)
 
         # opts is a list of CLI options as in "--strip-root": the last opt is

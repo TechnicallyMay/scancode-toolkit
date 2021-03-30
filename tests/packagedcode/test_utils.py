@@ -61,7 +61,7 @@ class TestPackageUtils(TestCase):
     def test_normalize_vcs_url_does_not_pad_git_plus(self):
         url = 'git+git://bitbucket.org/vendor/my-private-repo.git'
         result = normalize_vcs_url(url)
-        assert url== result
+        assert url == result
 
     def test_normalize_vcs_url_does_not_pad_git_plus2(self):
         url = 'git+https://github.com/stevepapa/angular2-autosize.git'
@@ -160,3 +160,7 @@ class TestPackageUtils(TestCase):
     def test_combine_expressions_with_duplicated_elements(self):
         assert 'mit AND apache-2.0' == combine_expressions(
             ['mit', 'apache-2.0', 'mit'])
+
+    def test_combine_expressions_with_or_relationship(self):
+        assert 'mit OR apache-2.0' == combine_expressions(
+            ['mit', 'apache-2.0'], 'OR')

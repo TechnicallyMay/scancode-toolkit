@@ -31,15 +31,17 @@ from itertools import islice
 
 # Python 2 and 3 support
 try:
-        # Python 2
-    import itertools.izip as zip
+    # Python 2
+    import itertools.izip as zip  # NOQA
 except ImportError:
-        # Python 3
-        pass
+    # Python 3
+    pass
 
+from binascii import crc32
 import re
-from zlib import crc32
 
+from commoncode.system import py2
+from commoncode.system import py3
 from licensedcode.stopwords import STOPWORDS
 from textcode.analysis import numbered_text_lines
 
@@ -77,7 +79,7 @@ def query_lines(location=None, query_string=None, strip=True):
 # Split on whitespace and punctuations: keep only characters and numbers and +
 # when in the middle or end of a word. Keeping the trailing + is important for
 # licenses name such as GPL2+
-query_pattern = '[^_\W]+\+?[^_\W]*'
+query_pattern = '[^_\\W]+\\+?[^_\\W]*'
 word_splitter = re.compile(query_pattern, re.UNICODE).findall
 
 
@@ -89,14 +91,14 @@ def query_tokenizer(text, stopwords=STOPWORDS):
     For example::
     >>> list(query_tokenizer(''))
     []
-    >>> list(query_tokenizer('some Text with   spAces! + _ -'))
-    [u'some', u'text', u'with', u'spaces']
+    >>> x = list(query_tokenizer('some Text with   spAces! + _ -'))
+    >>> assert x == ['some', 'text', 'with', 'spaces']
 
-    >>> list(query_tokenizer('{{}some }}Text with   spAces! + _ -'))
-    [u'some', u'text', u'with', u'spaces']
+    >>> x = list(query_tokenizer('{{}some }}Text with   spAces! + _ -'))
+    >>> assert x == ['some', 'text', 'with', 'spaces']
 
-    >>> list(query_tokenizer('{{Hi}}some {{}}Text with{{noth+-_!@ing}}   {{junk}}spAces! + _ -{{}}'))
-    [u'hi', u'some', u'text', u'with', u'noth+', u'ing', u'junk', u'spaces']
+    >>> x = list(query_tokenizer('{{Hi}}some {{}}Text with{{noth+-_!@ing}}   {{junk}}spAces! + _ -{{}}'))
+    >>> assert x == ['hi', 'some', 'text', 'with', 'noth+', 'ing', 'junk', 'spaces']
 
     """
     return _query_tokenizer(text.lower(), stopwords)
@@ -114,7 +116,7 @@ def _query_tokenizer(text, stopwords=STOPWORDS):
 
 # Alternate pattern which is the opposite of query_pattern used for
 # matched text collection
-not_query_pattern = '[_\W\s\+]+[_\W\s]?'
+not_query_pattern = '[_\\W\\s\\+]+[_\\W\\s]?'
 
 # collect tokens and non-token texts in two different groups
 _text_capture_pattern = (
@@ -137,7 +139,7 @@ def matched_query_text_tokenizer(text):
     - True if the string is a text token or False if this is not
       (such as punctuation, spaces, etc).
     - the corresponding string.
-    This is used to reconstruct the matched query text accurately.
+    This is used to reconstruct the matched query text for reporting.
     """
     if not text:
         return
@@ -146,14 +148,19 @@ def matched_query_text_tokenizer(text):
             mgd = match.groupdict()
             token = mgd.get('token')
             punct = mgd.get('punct')
-            if token or punct:
-                yield (True, token) if token else (False, punct)
+            if token:
+                yield True, token
+            elif punct:
+                yield False, punct
+            else:
+                # this should never happen
+                raise Exception('Internal error in matched_query_text_tokenizer')
 
 
 def ngrams(iterable, ngram_length):
     """
-    Return an iterable of ngrams of length `ngram_length` given an iterable.
-    Each ngram is a tuple of ngram_length items.
+    Return an iterable of ngrams of length `ngram_length` given an `iterable`.
+    Each ngram is a tuple of `ngram_length` items.
 
     The returned iterable is empty if the input iterable contains less than
     `ngram_length` items.
@@ -182,7 +189,7 @@ def ngrams(iterable, ngram_length):
     This also works with arrays or tuples:
 
     >>> from array import array
-    >>> list(ngrams(array(b'h', [1,2,3,4,5]), 2))
+    >>> list(ngrams(array('h', [1,2,3,4,5]), 2))
     [(1, 2), (2, 3), (3, 4), (4, 5)]
 
     >>> list(ngrams(tuple([1,2,3,4,5]), 2))
@@ -207,29 +214,36 @@ def select_ngrams(ngrams, with_pos=False):
 
     For example:
     >>> list(select_ngrams([(2, 1, 3), (1, 1, 3), (5, 1, 3), (2, 6, 1), (7, 3, 4)]))
-    [(2, 1, 3), (1, 1, 3), (2, 6, 1), (7, 3, 4)]
+    [(2, 1, 3), (1, 1, 3), (5, 1, 3), (2, 6, 1), (7, 3, 4)]
 
     Positions can also be included. In this case, tuple of (pos, ngram) are returned:
     >>> list(select_ngrams([(2, 1, 3), (1, 1, 3), (5, 1, 3), (2, 6, 1), (7, 3, 4)], with_pos=True))
-    [(0, (2, 1, 3)), (1, (1, 1, 3)), (3, (2, 6, 1)), (4, (7, 3, 4))]
+    [(0, (2, 1, 3)), (1, (1, 1, 3)), (2, (5, 1, 3)), (3, (2, 6, 1)), (4, (7, 3, 4))]
 
     This works also from a generator:
     >>> list(select_ngrams(x for x in [(2, 1, 3), (1, 1, 3), (5, 1, 3), (2, 6, 1), (7, 3, 4)]))
-    [(2, 1, 3), (1, 1, 3), (2, 6, 1), (7, 3, 4)]
+    [(2, 1, 3), (1, 1, 3), (5, 1, 3), (2, 6, 1), (7, 3, 4)]
     """
     last = None
-    for i, ngram in enumerate(ngrams):
+    for pos, ngram in enumerate(ngrams):
         # FIXME: use a proper hash
-        nghs = [crc32(str(ng)) for ng in ngram]
+        nghs = []
+        for ng in ngram:
+            if ((py2 and isinstance(ng, basestring))
+                    or (py3 and isinstance(ng, str))):
+                ng = bytearray(ng, encoding='utf-8')
+            else:
+                ng = bytearray(str(ng).encode('utf-8'))
+            nghs.append(crc32(ng) & 0xffffffff)
         min_hash = min(nghs)
         if with_pos:
-            ngram = (i, ngram,)
-        if nghs[0] == min_hash or nghs[-1] == min_hash:
+            ngram = (pos, ngram,)
+        if min_hash in (nghs[0], nghs[-1]):
             yield ngram
             last = ngram
         else:
             # always yield the first or last ngram too.
-            if i == 0:
+            if pos == 0:
                 yield ngram
                 last = ngram
     if last != ngram:

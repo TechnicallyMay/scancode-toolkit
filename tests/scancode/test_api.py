@@ -30,8 +30,21 @@ from collections import OrderedDict
 import os
 
 from commoncode.testcase import FileBasedTesting
-
 from scancode import api
+
+
+class TestPackageAPI(FileBasedTesting):
+    test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
+
+    def test_get_package_info_works_for_maven_dot_pom(self):
+        test_file = self.get_test_loc('api/package/p6spy-1.3.pom')
+        packages = api.get_package_info(test_file)
+        assert packages['packages'][0]['version'] == '1.3'
+
+    def test_get_package_info_works_for_maven_pom_dot_xml(self):
+        test_file = self.get_test_loc('api/package/pom.xml')
+        packages = api.get_package_info(test_file)
+        assert packages['packages'][0]['version'] == '1.3'
 
 
 class TestAPI(FileBasedTesting):
@@ -42,7 +55,10 @@ class TestAPI(FileBasedTesting):
         package = api.get_package_info(test_file)
 
         import pickle
-        import cPickle
+        try:
+            import cPickle
+        except ImportError:
+            import pickle as cPickle
         try:
             _pickled = pickle.dumps(package, pickle.HIGHEST_PROTOCOL)
             _cpickled = cPickle.dumps(package, pickle.HIGHEST_PROTOCOL)
@@ -56,30 +72,21 @@ class TestAPI(FileBasedTesting):
         test_dir = self.get_test_loc('api/info/test.txt')
         info = api.get_file_info(test_dir)
         expected = [
-            (u'size', 0),
-            (u'sha1', None),
-            (u'md5', None),
-            (u'mime_type', u'inode/x-empty'),
-            (u'file_type', u'empty'),
-            (u'programming_language', None),
-            (u'is_binary', False),
-            (u'is_text', True),
-            (u'is_archive', False),
-            (u'is_media', False),
-            (u'is_source', False),
-            (u'is_script', False)
+            ('size', 0),
+            ('sha1', None),
+            ('md5', None),
+            ('sha256', None),
+            ('mime_type', 'inode/x-empty'),
+            ('file_type', 'empty'),
+            ('programming_language', None),
+            ('is_binary', False),
+            ('is_text', True),
+            ('is_archive', False),
+            ('is_media', False),
+            ('is_source', False),
+            ('is_script', False)
         ]
         assert expected == [(k, v) for k, v in info.items() if k != 'date']
-
-    def test_get_package_info_works_for_maven_dot_pom(self):
-        test_file = self.get_test_loc('api/package/p6spy-1.3.pom')
-        packages = api.get_package_info(test_file)
-        assert packages['packages'][0]['version'] == '1.3'
-
-    def test_get_package_info_works_for_maven_pom_dot_xml(self):
-        test_file = self.get_test_loc('api/package/pom.xml')
-        packages = api.get_package_info(test_file)
-        assert packages['packages'][0]['version'] == '1.3'
 
     def test_get_copyrights_include_copyrights_and_authors(self):
         test_file = self.get_test_loc('api/copyright/iproute.c')
@@ -142,7 +149,7 @@ class TestAPI(FileBasedTesting):
         test_file = self.get_test_loc('api/license/apache-1.0.txt')
         results = api.get_licenses(test_file)
         expected = [
-            'apache-1.0 AND public-domain',
+            'apache-1.0',
             'gpl-2.0 WITH linux-syscall-exception-gpl OR linux-openib'
         ]
         assert expected == results['license_expressions']

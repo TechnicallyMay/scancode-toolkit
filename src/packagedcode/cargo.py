@@ -1,5 +1,5 @@
 
-# Copyright (c) 2019 nexB Inc. and others. All rights reserved.
+# Copyright (c) nexB Inc. and others. All rights reserved.
 # http://nexb.com and https://github.com/nexB/scancode-toolkit/
 # The ScanCode software is licensed under the Apache License version 2.0.
 # Data generated with ScanCode require an acknowledgment.
@@ -27,12 +27,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from collections import OrderedDict
-import io
-import toml
 import logging
 import re
 
 import attr
+from packageurl import PackageURL
+import toml
 
 from commoncode import filetype
 from commoncode import fileutils
@@ -55,7 +55,7 @@ if TRACE:
 
 @attr.s()
 class RustCargoCrate(models.Package):
-    metafiles = ('Cargo.toml',)
+    metafiles = ('Cargo.toml', 'Cargo.lock')
     default_type = 'cargo'
     default_primary_language = 'Rust'
     default_web_baseurl = 'https://crates.io'
@@ -64,43 +64,39 @@ class RustCargoCrate(models.Package):
 
     @classmethod
     def recognize(cls, location):
-        return parse(location)
+        yield parse(location)
 
     @classmethod
     def get_package_root(cls, manifest_resource, codebase):
         return manifest_resource.parent(codebase)
 
     def repository_homepage_url(self, baseurl=default_web_baseurl):
-        return '{}/crates/{}'.format(baseurl, self.name)
+        if self.name:
+            return '{}/crates/{}'.format(baseurl, self.name)
 
     def repository_download_url(self, baseurl=default_download_baseurl):
-        return '{}/crates/{}/{}/download'.format(baseurl, self.name, self.version)
+        if self.name and self.version:
+            return '{}/crates/{}/{}/download'.format(baseurl, self.name, self.version)
 
     def api_data_url(self, baseurl=default_api_baseurl):
-        return '{}/crates/{}'.format(baseurl, self.name)
-
-    def compute_normalized_license(self):
-        return models.compute_normalized_license(self.declared_license)
-
-
-def is_cargo_toml(location):
-    return (filetype.is_file(location) and fileutils.file_name(location).lower() == 'cargo.toml')
+        if self.name:
+            return '{}/crates/{}'.format(baseurl, self.name)
 
 
 def parse(location):
     """
-    Return a Package object from a Cargo.toml file or None.
+    Return a Package object from a Cargo.toml/Cargo.lock file.
     """
-    if not is_cargo_toml(location):
-        return
+    handlers = {'cargo.toml': build_cargo_toml_package, 'cargo.lock': build_cargo_lock_package}
+    filename = filetype.is_file(location) and fileutils.file_name(location).lower()
+    handler = handlers.get(filename)
+    if handler:
+        return handler and handler(toml.load(location, _dict=OrderedDict))
 
-    package_data = toml.load(location, _dict=OrderedDict)
-    return build_package(package_data)
 
-
-def build_package(package_data):
+def build_cargo_toml_package(package_data):
     """
-    Return a Pacakge object from a package data mapping or None.
+    Return a Package object from a Cargo.toml package data mapping or None.
     """
 
     core_package_data = package_data.get('package', {})
@@ -113,11 +109,14 @@ def build_package(package_data):
     authors = core_package_data.get('authors')
     parties = list(party_mapper(authors, party_role='author'))
 
+    declared_license = core_package_data.get('license')
+
     package = RustCargoCrate(
         name=name,
         version=version,
         description=description,
         parties=parties,
+        declared_license=declared_license
     )
 
     return package
@@ -146,12 +145,12 @@ def parse_person(person):
       "author": "Isaac Z. Schlueter <i@izs.me>"
 
     For example:
-    >>> parse_person('Barney Rubble <b@rubble.com>')
-    (u'Barney Rubble', u'b@rubble.com')
-    >>> parse_person('Barney Rubble')
-    (u'Barney Rubble', None)
-    >>> parse_person('<b@rubble.com>')
-    (None, u'b@rubble.com')
+    >>> p = parse_person('Barney Rubble <b@rubble.com>')
+    >>> assert p == ('Barney Rubble', 'b@rubble.com')
+    >>> p = parse_person('Barney Rubble')
+    >>> assert p == ('Barney Rubble', None)
+    >>> p = parse_person('<b@rubble.com>')
+    >>> assert p == (None, 'b@rubble.com')
     """
 
     parsed = person_parser(person)
@@ -180,3 +179,29 @@ person_parser = re.compile(
 person_parser_no_name = re.compile(
     r'(?P<email><([^>]+)>)?'
 ).match
+
+
+def build_cargo_lock_package(package_data):
+    """
+    Return a Package object from a Cargo.lock package data mapping or None.
+    """
+
+    package_dependencies = []
+    core_package_data = package_data.get('package', [])
+    for dep in core_package_data:
+        package_dependencies.append(
+            models.DependentPackage(
+                purl=PackageURL(
+                    type='crates',
+                    name=dep.get('name'),
+                    version=dep.get('version')
+                ).to_string(),
+                requirement=dep.get('version'),
+                scope='dependency',
+                is_runtime=True,
+                is_optional=False,
+                is_resolved=True,
+            )
+        )
+    
+    return RustCargoCrate(dependencies=package_dependencies)

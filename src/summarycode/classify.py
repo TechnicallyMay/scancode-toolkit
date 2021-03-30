@@ -29,14 +29,16 @@ from __future__ import unicode_literals
 
 from collections import OrderedDict
 
+from six import string_types
+
 from commoncode.datautils import Boolean
 from commoncode.fileset import get_matches
 from plugincode.pre_scan import PreScanPlugin
 from plugincode.pre_scan import pre_scan_impl
 from plugincode.post_scan import PostScanPlugin
 from plugincode.post_scan import post_scan_impl
-from scancode import CommandLineOption
-from scancode import PRE_SCAN_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import PRE_SCAN_GROUP
 
 """
 Tag files as "key" or important and top-level files.
@@ -71,7 +73,7 @@ if TRACE:
 
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 
 @pre_scan_impl
@@ -120,7 +122,7 @@ class FileClassifier(PreScanPlugin):
     sort_order = 50
 
     options = [
-        CommandLineOption(('--classify',),
+        PluggableCommandLineOption(('--classify',),
             is_flag=True, default=False,
             help='Classify files with flags telling if the file is a legal, '
                  'or readme or test file, etc.',
@@ -226,10 +228,10 @@ class PackageTopAndKeyFilesTagger(PostScanPlugin):
 
                     if TRACE:
                         logger_debug('PackageTopAndKeyFilesTagger: descendants')
-                        for rpath, desc in descendants.iteritems():
+                        for rpath, desc in descendants.items():
                             logger_debug('rpath:', rpath, 'desc:', desc)
 
-                for rpath, desc in descendants.iteritems():
+                for rpath, desc in descendants.items():
                     if extra_root_dirs and get_matches(rpath, extra_root_dirs):
                         if TRACE:
                             logger_debug('PackageTopAndKeyFilesTagger: get_matches for:', rpath, desc)

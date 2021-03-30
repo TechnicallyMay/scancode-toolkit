@@ -33,6 +33,13 @@ from os.path import dirname
 from os.path import isdir
 import sys
 
+from io import BytesIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
+
+from six import string_types
 from spdx.checksum import Algorithm
 from spdx.creationinfo import Tool
 from spdx.document import Document
@@ -44,22 +51,12 @@ from spdx.utils import NoAssert
 from spdx.utils import SPDXNone
 from spdx.version import Version
 
+from formattedcode import FileOptionType
+from commoncode.cliutils import OUTPUT_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
 from plugincode.output import output_impl
 from plugincode.output import OutputPlugin
-from scancode import CommandLineOption
-from scancode import FileOptionType
-from scancode import OUTPUT_GROUP
 
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str_orig = str
-    bytes = str  # NOQA
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 # Tracing flags
 TRACE = False
@@ -78,7 +75,7 @@ if TRACE or TRACE_DEEP:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode)
+        return logger.debug(' '.join(isinstance(a, string_types)
                                      and a or repr(a) for a in args))
 
 """
@@ -133,8 +130,8 @@ def get_licenses_by_spdx_key(licenses):
 class SpdxTvOutput(OutputPlugin):
 
     options = [
-        CommandLineOption(('--spdx-tv',),
-            type=FileOptionType(mode='wb', lazy=True),
+        PluggableCommandLineOption(('--spdx-tv',),
+            type=FileOptionType(lazy=True, mode='w', encoding='utf-8'),
             metavar='FILE',
             help='Write scan output as SPDX Tag/Value to FILE.',
             help_group=OUTPUT_GROUP)
@@ -160,8 +157,8 @@ class SpdxTvOutput(OutputPlugin):
 class SpdxRdfOutput(OutputPlugin):
 
     options = [
-        CommandLineOption(('--spdx-rdf',),
-            type=FileOptionType(mode='wb', lazy=True),
+        PluggableCommandLineOption(('--spdx-rdf',),
+            type=FileOptionType(lazy=True, mode='w', encoding='utf-8'),
             metavar='FILE',
             help='Write scan output as SPDX RDF to FILE.',
             help_group=OUTPUT_GROUP)
@@ -300,12 +297,15 @@ def write_spdx(output_file, files, tool_name, tool_version, notice, input_file, 
 
     if len(package.files) == 0:
         if as_tagvalue:
-            output_file.write("# No results for package '{}'.\n".format(package.name))
+            msg = "# No results for package '{}'.\n".format(package.name)
         else:
-            output_file.write("<!-- No results for package '{}'. -->\n".format(package.name))
+            # rdf
+            msg = "<!-- No results for package '{}'. -->\n".format(package.name)
+        output_file.write(msg)
 
     # Remove duplicate licenses from the list for the package.
-    unique_licenses = set(package.licenses_from_files)
+    unique_licenses = {(l.identifier, l.full_name): l for l in package.licenses_from_files}
+    unique_licenses = list(unique_licenses.values())
     if not len(package.licenses_from_files):
         if all_files_have_no_license:
             package.licenses_from_files = [SPDXNone()]
@@ -329,25 +329,36 @@ def write_spdx(output_file, files, tool_name, tool_version, notice, input_file, 
     package.license_declared = NoAssert()
     package.conc_lics = NoAssert()
 
-    if as_tagvalue:
-        from spdx.writers.tagvalue import write_document  # NOQA
-    else:
-        from spdx.writers.rdf import write_document  # NOQA
-
     # The spdx-tools write_document returns either:
     # - unicode for tag values
     # - UTF8-encoded bytes for rdf because somehow the rdf and xml
-    #   libraries do the encoding
-    # The file passed by ScanCode for output is always opened in binary
-    # mode and needs to receive UTF8-encoded bytes.
-    # Therefore in one case we do nothing (rdf) and in the other case we
-    # encode to UTF8 bytes.
+    #   libraries do the encoding and do not return text but bytes
+    # The file passed by ScanCode for output is opened in text mode Therefore in
+    # one case we do need to deal with bytes and decode before writing (rdf) and
+    # in the other case we deal with text all the way.
 
     if package.files:
-        from StringIO import StringIO
-        spdx_output = StringIO()
+
+        if as_tagvalue:
+            from spdx.writers.tagvalue import write_document  # NOQA
+        else:
+            from spdx.writers.rdf import write_document  # NOQA
+
+        if as_tagvalue:
+            # unicode text everywhere
+            spdx_output = StringIO()
+        else:
+            # rdf as utf-encoded bytes on Py2
+            spdx_output = BytesIO()
+
         write_document(doc, spdx_output, validate=False)
         result = spdx_output.getvalue()
+
         if as_tagvalue:
-            result = result.encode('utf-8')
+            # unicode text everywhere
+            pass
+        else:
+            # rdf as utf-encoded bytes on Py2
+            result = result.decode('utf-8')
+
         output_file.write(result)

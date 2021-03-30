@@ -30,11 +30,14 @@ from collections import OrderedDict
 import simplejson
 from six import string_types
 
+from commoncode.system import py2
+from commoncode.system import py3
+from formattedcode import FileOptionType
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import OUTPUT_GROUP
 from plugincode.output import output_impl
 from plugincode.output import OutputPlugin
-from scancode import CommandLineOption
-from scancode import FileOptionType
-from scancode import OUTPUT_GROUP
+
 
 """
 Output plugins to write scan results as JSON.
@@ -57,16 +60,31 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode)
+        return logger.debug(' '.join(isinstance(a, string_types)
                                      and a or repr(a) for a in args))
+
+
+if py2:
+    mode = 'wb'
+    space = b' '
+    comma = b','
+    colon = b':'
+    eol = b'\n'
+
+if py3:
+    mode = 'w'
+    space = u' '
+    comma = u','
+    colon = u':'
+    eol = u'\n'
 
 
 @output_impl
 class JsonCompactOutput(OutputPlugin):
 
     options = [
-        CommandLineOption(('--json', 'output_json',),
-            type=FileOptionType(mode='wb', lazy=True),
+        PluggableCommandLineOption(('--json', 'output_json',),
+            type=FileOptionType(mode=mode, lazy=True),
             metavar='FILE',
             help='Write scan output as compact JSON to FILE.',
             help_group=OUTPUT_GROUP,
@@ -85,8 +103,8 @@ class JsonCompactOutput(OutputPlugin):
 class JsonPrettyOutput(OutputPlugin):
 
     options = [
-        CommandLineOption(('--json-pp', 'output_json_pp',),
-            type=FileOptionType(mode='wb', lazy=True),
+        PluggableCommandLineOption(('--json-pp', 'output_json_pp',),
+            type=FileOptionType(mode=mode, lazy=True),
             metavar='FILE',
             help='Write scan output as pretty-printed JSON to FILE.',
             help_group=OUTPUT_GROUP,
@@ -101,29 +119,26 @@ class JsonPrettyOutput(OutputPlugin):
         write_json(results, output_file=output_json_pp, pretty=True)
 
 
-def get_opened_file(output_file):
-    if isinstance(output_file, string_types()):
-        return open(output_file, 'wb')
-
-
 def write_json(results, output_file, pretty=False, **kwargs):
     """
     Write `results` to the `output_file` opened file-like object.
     """
-    # NOTE: we write as encoded, binary bytes, not as unicode, decoded text
+    # NOTE: we write as encoded, binary bytes, not as unicode, decoded text on py2
     kwargs = dict(iterable_as_array=True, encoding='utf-8')
     if pretty:
-        kwargs.update(dict(indent=2 * b' '))
+        kwargs.update(dict(indent=2 * space))
     else:
-        kwargs.update(dict(separators=(b',', b':',)))
+        kwargs.update(dict(separators=(comma, colon,)))
 
     close_of = False
+
+
     try:
         if isinstance(output_file, string_types):
-            output_file = open(output_file, 'wb')
+            output_file = open(output_file, mode)
             close_of = True
         output_file.write(simplejson.dumps(results, **kwargs))
-        output_file.write(b'\n')
+        output_file.write(eol)
     finally:
         if close_of:
             output_file.close()

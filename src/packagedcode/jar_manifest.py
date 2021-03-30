@@ -32,21 +32,10 @@ import re
 import attr
 
 from commoncode.fileutils import as_posixpath
+from commoncode.fileutils import py2
 from packagedcode.utils import normalize_vcs_url
 from packagedcode.maven import parse_scm_connection
 from packagedcode.models import Package
-
-
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str_orig = str
-    bytes = str  # NOQA
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 
 """
@@ -71,7 +60,7 @@ class JavaArchive(Package):
     @classmethod
     def recognize(cls, location):
         if is_manifest(location):
-            return parse_manifest(location)
+            yield parse_manifest(location)
 
     @classmethod
     def get_package_root(cls, manifest_resource, codebase):
@@ -93,7 +82,11 @@ def parse_manifest(location):
     """
     Return a Manifest parsed from the file at `location` or None if this
     cannot be parsed.         """
-    with open(location, 'rb') as manifest:
+    if py2:
+        mode = 'rb'
+    else:
+        mode = 'r'
+    with open(location, mode) as manifest:
         return parse_manifest_data(manifest.read())
 
 

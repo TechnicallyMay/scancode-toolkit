@@ -13,3 +13,6 @@ other_urls:
     - http://opensource.org/licenses/ZPL-2.0
     - http://www.zope.com/Marks
     - https://opensource.org/licenses/ZPL-2.0
+ignorable_urls:
+    - http://www.zope.com/Marks
+osi_license_key: ZPL-2.0

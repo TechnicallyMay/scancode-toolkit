@@ -27,12 +27,41 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from collections import OrderedDict
+
 import attr
+import click
+click.disable_unicode_literals_warning = True
 
 from plugincode.scan import ScanPlugin
 from plugincode.scan import scan_impl
-from scancode import CommandLineOption
-from scancode import SCAN_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import DOC_GROUP
+from commoncode.cliutils import SCAN_GROUP
+
+from packagedcode import get_package_instance
+from packagedcode import PACKAGE_TYPES
+
+
+def print_packages(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    for package_cls in sorted(PACKAGE_TYPES, key=lambda pc: (pc.default_type)):
+        click.echo('--------------------------------------------')
+        click.echo('Package: {self.default_type}'.format(self=package_cls))
+        click.echo(
+            '  class: {self.__module__}:{self.__name__}'.format(self=package_cls))
+        if package_cls.metafiles:
+            click.echo('  metafiles: ', nl=False)
+            click.echo(', '.join(package_cls.metafiles))
+        if package_cls.extensions:
+            click.echo('  extensions: ', nl=False)
+            click.echo(', '.join(package_cls.extensions))
+        if package_cls.filetypes:
+            click.echo('  filetypes: ', nl=False)
+            click.echo(', '.join(package_cls.filetypes))
+        click.echo('')
+    ctx.exit()
 
 
 @scan_impl
@@ -42,19 +71,26 @@ class PackageScanner(ScanPlugin):
     right file or directory level.
     """
 
-    resource_attributes = dict(packages=attr.ib(default=attr.Factory(list), repr=False))
+    resource_attributes = OrderedDict()
+    resource_attributes['packages'] = attr.ib(default=attr.Factory(list), repr=False)
 
     sort_order = 6
 
     required_plugins = ['scan:licenses', ]
 
     options = [
-        CommandLineOption(('-p', '--package',),
+        PluggableCommandLineOption(('-p', '--package',),
             is_flag=True, default=False,
-            help='Scan <input> for package manifests and packages.',
-            # yes, this is showed as a SCAN plugin in doc/help
+            help='Scan <input> for package manifests and build scripts.',
             help_group=SCAN_GROUP,
             sort_order=20),
+
+        PluggableCommandLineOption(
+            ('--list-packages',),
+            is_flag=True, is_eager=True,
+            callback=print_packages,
+            help='Show the list of supported package types and exit.',
+            help_group=DOC_GROUP),
     ]
 
     def is_enabled(self, package, **kwargs):
@@ -69,72 +105,47 @@ class PackageScanner(ScanPlugin):
 
     def process_codebase(self, codebase, **kwargs):
         """
-        Move package manifest scan information to the proper file or
-        directory level given a package type.
+        Set the package root given a package "type".
         """
-        from packagedcode import get_package_class
-
         if codebase.has_single_resource:
             # What if we scanned a single file and we do not have a root proper?
             return
 
         for resource in codebase.walk(topdown=False):
-            # only files can have a manifest
-            if not resource.is_file:
-                continue
+            set_packages_root(resource, codebase)
 
-            if resource.is_root:
-                continue
 
-            packages_info = resource.packages
-            if not packages_info:
-                continue
+def set_packages_root(resource, codebase):
+    """
+    Set the root_path attribute as the path to the root Resource for a given
+    package package or build script that may exist in a `resource`.
+    """
+    # only files can have a package
+    if not resource.is_file:
+        return
 
-            # NOTE: we are dealing with a single file therefore there should be
-            # only be a single package detected. But some package manifests can
-            # document more than one package at a time such as multiple
-            # arches/platforms for a gempsec or multiple sub package (with
-            # "%package") in an RPM .spec file.
-            for package_info in packages_info:
-                package_class = get_package_class(package_info)
-                new_package_root = package_class.get_package_root(resource, codebase)
+    packages = resource.packages
+    if not packages:
+        return
+    # NOTE: we are dealing with a single file therefore there should be only be
+    # a single package detected. But some package manifests can document more
+    # than one package at a time such as multiple arches/platforms for a gempsec
+    # or multiple sub package (with "%package") in an RPM .spec file.
 
-                if not new_package_root:
-                    # this can happen if we scan a single resource that is a package manifest
-                    continue
+    modified = False
+    for package in packages:
+        package_instance = get_package_instance(package)
+        package_root = package_instance.get_package_root(resource, codebase)
+        if not package_root:
+            # this can happen if we scan a single resource that is a package package
+            continue
+        # What if the target resource (e.g. a parent) is the root and we are in stripped root mode?
+        if package_root.is_root and codebase.strip_root:
+            continue
+        package['root_path'] = package_root.path
+        modified = True
 
-                if new_package_root == resource:
-                    continue
-
-                # here new_package_root != resource:
-
-                # What if the target resource (e.g. a parent) is the root and we are in stripped root mode?
-                if new_package_root.is_root and codebase.strip_root:
-                    continue
-
-                # Determine if this package applies to more than just the manifest
-                # file (typically it means the whole parent directory is the
-                # package) and if yes:
-                # 1. fetch this resource
-                # 2. move the package data to this new resource
-                # 3. set the manifest_path if needed.
-                # 4. save.
-
-                # NOTE: do not do this if the new_package_root is not an ancestor
-                # FIXME: this may not hold at all times?
-                ancestors = resource.ancestors(codebase)
-                if new_package_root not in ancestors:
-                    continue
-                # here we have a relocated Resource and we compute the manifest path
-                # relative to the new package root
-                new_package_root_path = new_package_root.path and new_package_root.path.strip('/')
-                if new_package_root_path:
-                    _, _, manifest_path = resource.path.partition(new_package_root_path)
-                    # note we could have also deserialized and serialized again instead
-                    package_info['manifest_path'] = manifest_path.lstrip('/')
-
-                new_package_root.packages.append(package_info)
-                codebase.save_resource(new_package_root)
-                resource.packages = []
-                codebase.save_resource(resource)
-
+    if modified:
+        # we did set the root_path
+        codebase.save_resource(resource)
+    return resource

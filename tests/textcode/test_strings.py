@@ -22,12 +22,17 @@
 #  ScanCode is a free software code scanning tool from nexB Inc. and others.
 #  Visit https://github.com/nexB/scancode-toolkit/ for support and download.
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import unicode_literals
 
+import io
+import json
 import os
 
+from commoncode.system import py2
+from commoncode.system import py3
 from commoncode.testcase import FileBasedTesting
-
 from textcode import strings
 
 
@@ -36,14 +41,20 @@ class TestStrings(FileBasedTesting):
 
     def check_file_strings(self, test_file, expected_file, regen=False):
         test_file = self.get_test_loc(test_file)
-        result = u'\n'.join(strings.strings_from_file(test_file))
+        results = list(strings.strings_from_file(test_file))
         expected = self.get_test_loc(expected_file)
         if regen:
-            with open(expected, 'wb') as o:
-                o.write(result)
-        expected = open(expected, 'rb').read()
-        assert expected == result
-        return result
+            if py2:
+                mode = 'wb'
+            if py3:
+                mode = 'w'
+            with io.open(expected, mode) as o:
+                o.write(json.dumps(results, indent=2))
+
+        with io.open(expected) as i:
+            expected = json.loads(i.read())
+        assert expected == results
+        return results
 
     def test_clean_string(self):
         assert list(strings.clean_string('aw w we ww '))
@@ -160,9 +171,9 @@ class TestStrings(FileBasedTesting):
         result = self.check_file_strings(test_file, expected_file)
 
         # ascii
-        assert 'publicKeyToken="6595b64144ccf1df"' in result
+        assert any('publicKeyToken="6595b64144ccf1df"' in r for r in result)
         # wide, utf-16-le string
-        assert 'Copyright (c) 1999-2014 Igor Pavlov' in result
+        assert  any('Copyright (c) 1999-2014 Igor Pavlov' in r for r in result)
 
     def test_strings_in_all_bin(self):
         test_dir = self.get_test_loc('strings/bin', copy=True)
@@ -171,3 +182,12 @@ class TestStrings(FileBasedTesting):
             test_file = os.path.join(test_dir, tf)
             expected_file = os.path.join(expec_dir, tf + '.strings')
             self.check_file_strings(test_file, expected_file)
+
+    def test_is_relative_path(self):
+        # Win Path
+        path = "c:\\usr\\lib\\librt.so.1."
+        self.assertFalse(strings.is_relative_path(path))
+
+        # Relative Posix Path
+        path = "usr/lib/librt.so.1"
+        self.assertTrue(strings.is_relative_path(path))

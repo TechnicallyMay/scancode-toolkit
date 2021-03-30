@@ -29,12 +29,13 @@ from collections import defaultdict
 
 import attr
 import click
+from six import string_types
 
 from commoncode.fileset import get_matches as get_fileset_matches
 from plugincode.pre_scan import PreScanPlugin
 from plugincode.pre_scan import pre_scan_impl
-from scancode import CommandLineOption
-from scancode import PRE_SCAN_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import PRE_SCAN_GROUP
 
 # Tracing flag
 TRACE = False
@@ -53,7 +54,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 """
 Assign a facet to a file.
@@ -128,7 +129,7 @@ class AddFacet(PreScanPlugin):
     sort_order = 20
 
     options = [
-        CommandLineOption(('--facet',),
+        PluggableCommandLineOption(('--facet',),
            multiple=True,
            metavar='<facet>=<pattern>',
            callback=validate_facets,

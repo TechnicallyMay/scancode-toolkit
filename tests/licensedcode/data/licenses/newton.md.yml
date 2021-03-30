@@ -1,2 +1,3 @@
 license_expressions:
-    - newton-king-cla
+  - generic-cla
+  - newton-king-cla

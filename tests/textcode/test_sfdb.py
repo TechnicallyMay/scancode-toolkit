@@ -35,7 +35,7 @@ class TestSfdb(FileBasedTesting):
     test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
 
     def check_get_text_lines(self, test_file, expected_file):
-        test_file = self.get_test_loc(test_file )
+        test_file = self.get_test_loc(test_file)
         expected_file = self.get_test_loc(expected_file)
         expected = open(expected_file, 'rb').read().splitlines(True)
         assert expected == list(sfdb.get_text_lines(test_file))

@@ -27,6 +27,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 from __future__ import print_function
 
+import io
 import os
 
 import click
@@ -37,9 +38,8 @@ from scancode.cli import run_scan
 
 
 """
-Generate an SPDX document for each license known in ScanCode that are not usted
-at SPDX.
-Run python genlicspdx.py -h for help.
+Generate an SPDX document for each license known in ScanCode that are not
+listed at SPDX. Run python genlicspdx.py -h for help.
 
 NOTE: this is rather inefficient as it is starting a new command line process
 for each license, taking a few seconds each time.
@@ -109,7 +109,7 @@ def cli(license_dir, verbose):
             click.echo('Creating SPDX document for license: {key}'.format(**ld))
             click.echo('at: {output}'.format(**locals()))
 
-        with open(output, 'wb') as ouput_file:
+        with io.open(output,  'w', encoding='utf-8') as ouput_file:
             kwargs = dict(input=lic.text_file, spdx_tv=ouput_file)
             kwargs.update(base_kwargs)
             run_scan(**kwargs)

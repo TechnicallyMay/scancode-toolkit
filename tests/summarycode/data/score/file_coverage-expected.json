@@ -9,8 +9,7 @@
         "--info": true,
         "--json": "<file>",
         "--license": true,
-        "--license-clarity-score": true,
-        "--license-diag": true
+        "--license-clarity-score": true
       },
       "notice": "Generated with ScanCode and provided on an \"AS IS\" BASIS, WITHOUT WARRANTIES\nOR CONDITIONS OF ANY KIND, either express or implied. No content created from\nScanCode should be considered or used as legal advice. Consult an Attorney\nfor any legal advice.\nScanCode is a free software code scanning tool from nexB Inc. and others.\nVisit https://github.com/nexB/scancode-toolkit/ for support and download.",
       "message": null,
@@ -21,11 +20,11 @@
     }
   ],
   "license_clarity_score": {
-    "score": 68,
+    "score": 53,
     "declared": true,
     "discovered": 0.33,
     "consistency": true,
-    "spdx": true,
+    "spdx": false,
     "license_texts": false
   },
   "files": [
@@ -38,6 +37,7 @@
       "size": 0,
       "sha1": null,
       "md5": null,
+      "sha256": null,
       "mime_type": null,
       "file_type": null,
       "programming_language": null,
@@ -49,8 +49,9 @@
       "is_script": false,
       "licenses": [],
       "license_expressions": [],
-      "holders": [],
+      "percentage_of_license_text": 0,
       "copyrights": [],
+      "holders": [],
       "authors": [],
       "is_legal": false,
       "is_manifest": false,
@@ -71,6 +72,7 @@
       "size": 295,
       "sha1": "7d770c5ffdcf659c944a670225ab43db9f33d4a8",
       "md5": "4b8955afbb3a8aa01933e99e331e4acf",
+      "sha256": "aac3e1032f4dffd347854cbe37d559223f2d61173caa649ca7cd0cfb11987334",
       "mime_type": "text/plain",
       "file_type": "ASCII text",
       "programming_language": null,
@@ -82,8 +84,9 @@
       "is_script": false,
       "licenses": [],
       "license_expressions": [],
-      "holders": [],
+      "percentage_of_license_text": 0,
       "copyrights": [],
+      "holders": [],
       "authors": [],
       "is_legal": false,
       "is_manifest": false,
@@ -104,8 +107,9 @@
       "size": 829,
       "sha1": "003103b742ebfb1e76e80d9fc05ab0b3046f2ab6",
       "md5": "bd8911e2d8af0caa689f76b9975761fd",
-      "mime_type": "text/plain",
-      "file_type": "ASCII text",
+      "sha256": "d27968b827780212a965387f5ec3421ee59a0bf9166847629db0e716e6d2d9c3",
+      "mime_type": "application/json",
+      "file_type": "JSON data",
       "programming_language": null,
       "is_binary": false,
       "is_text": true,
@@ -116,7 +120,7 @@
       "licenses": [
         {
           "key": "mit",
-          "score": 99.0,
+          "score": 100.0,
           "name": "MIT License",
           "short_name": "MIT License",
           "category": "Permissive",
@@ -130,7 +134,7 @@
           "start_line": 7,
           "end_line": 7,
           "matched_rule": {
-            "identifier": "mit_34.RULE",
+            "identifier": "mit_30.RULE",
             "license_expression": "mit",
             "licenses": [
               "mit"
@@ -143,16 +147,23 @@
             "rule_length": 2,
             "matched_length": 2,
             "match_coverage": 100.0,
-            "rule_relevance": 99.0
+            "rule_relevance": 100.0
           }
         }
       ],
       "license_expressions": [
         "mit"
       ],
-      "holders": [],
+      "percentage_of_license_text": 1.83,
       "copyrights": [],
-      "authors": [],
+      "holders": [],
+      "authors": [
+        {
+          "value": "Alexander Plavinski <alexander.plavinski@invision.de>",
+          "start_line": 6,
+          "end_line": 8
+        }
+      ],
       "is_legal": false,
       "is_manifest": true,
       "is_readme": false,
@@ -172,6 +183,7 @@
       "size": 0,
       "sha1": null,
       "md5": null,
+      "sha256": null,
       "mime_type": null,
       "file_type": null,
       "programming_language": null,
@@ -183,8 +195,9 @@
       "is_script": false,
       "licenses": [],
       "license_expressions": [],
-      "holders": [],
+      "percentage_of_license_text": 0,
       "copyrights": [],
+      "holders": [],
       "authors": [],
       "is_legal": false,
       "is_manifest": false,
@@ -205,6 +218,7 @@
       "size": 80,
       "sha1": "1a7d7f3d183f25d76b1feb463536af0d3fc910dd",
       "md5": "f0720dc66980838af42ffd077dc4ff8b",
+      "sha256": "b85100a2a46e69903dee27801e10ea096cca796e5e501089b97bdbb24102d6aa",
       "mime_type": "text/plain",
       "file_type": "ASCII text",
       "programming_language": "JavaScript",
@@ -240,7 +254,7 @@
             "is_license_notice": false,
             "is_license_reference": false,
             "is_license_tag": true,
-            "matcher": "4-spdx-id",
+            "matcher": "1-spdx-id",
             "rule_length": 4,
             "matched_length": 4,
             "match_coverage": 100.0,
@@ -251,16 +265,17 @@
       "license_expressions": [
         "mit"
       ],
-      "holders": [
+      "percentage_of_license_text": 33.33,
+      "copyrights": [
         {
-          "value": "nexB Inc.",
+          "value": "Copyright (c) 2007 nexB Inc.",
           "start_line": 2,
           "end_line": 2
         }
       ],
-      "copyrights": [
+      "holders": [
         {
-          "value": "Copyright (c) 2007 nexB Inc.",
+          "value": "nexB Inc.",
           "start_line": 2,
           "end_line": 2
         }
@@ -285,6 +300,7 @@
       "size": 48,
       "sha1": "1d3832cc4eb434502ef83b10f0db4ff2bfea461f",
       "md5": "375540922bb49a362b660bd696e48fdd",
+      "sha256": "57838bf7c11ec6ee9d7403259cc0397998f5392d4e3cd0f92fda2b7729b143e0",
       "mime_type": "text/plain",
       "file_type": "ASCII text",
       "programming_language": "JavaScript",
@@ -296,16 +312,17 @@
       "is_script": false,
       "licenses": [],
       "license_expressions": [],
-      "holders": [
+      "percentage_of_license_text": 0,
+      "copyrights": [
         {
-          "value": "nexB Inc.",
+          "value": "Copyright (c) 2007 nexB Inc.",
           "start_line": 1,
           "end_line": 1
         }
       ],
-      "copyrights": [
+      "holders": [
         {
-          "value": "Copyright (c) 2007 nexB Inc.",
+          "value": "nexB Inc.",
           "start_line": 1,
           "end_line": 1
         }
@@ -330,6 +347,7 @@
       "size": 57,
       "sha1": "da6b19af59bff9c997305550c52b98c3eb746e93",
       "md5": "746ece6b838c1fcab25fb842f810cd9f",
+      "sha256": "5023884c86581327c20a5156c2cb4b33c30f0d27ecadea58e996c7dd46fda568",
       "mime_type": "text/plain",
       "file_type": "ASCII text",
       "programming_language": "Java",
@@ -341,16 +359,17 @@
       "is_script": false,
       "licenses": [],
       "license_expressions": [],
-      "holders": [
+      "percentage_of_license_text": 0,
+      "copyrights": [
         {
-          "value": "nexB Inc.",
+          "value": "Copyright (c) 2007 nexB Inc.",
           "start_line": 1,
           "end_line": 1
         }
       ],
-      "copyrights": [
+      "holders": [
         {
-          "value": "Copyright (c) 2007 nexB Inc.",
+          "value": "nexB Inc.",
           "start_line": 1,
           "end_line": 1
         }

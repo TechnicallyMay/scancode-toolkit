@@ -29,24 +29,18 @@ from __future__ import unicode_literals
 from collections import OrderedDict
 import io
 import os
-
 import traceback
-import unittest
 
 import attr
 from license_expression import Licensing
+import pytest
 
+from commoncode import compat
 from commoncode import saneyaml
+from commoncode.system import py2
+from commoncode.system import py3
 from commoncode import text
 from commoncode.testcase import get_test_file_pairs
-
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 
 """
@@ -89,15 +83,16 @@ class LicenseTest(object):
 
         data = {}
         if self.data_file:
-            with io.open(self.data_file, encoding='utf-8') as df:
-                data = saneyaml.load(df.read()) or {}
+            try:
+                with io.open(self.data_file, encoding='utf-8') as df:
+                    data = saneyaml.load(df.read()) or {}
+            except Exception as e:
+                raise Exception('Failed to read:', 'file://' + self.data_file, e)
 
-        self.license_expressions = data.pop('license_expressions', [])
-
-        self.notes = data.pop('notes', None)
-
-        # True if the test is expected to fail
-        self.expected_failure = data.pop('expected_failure', False)
+            self.license_expressions = data.pop('license_expressions', [])
+            self.notes = data.pop('notes', None)
+            # True if the test is expected to fail
+            self.expected_failure = data.pop('expected_failure', False)
 
         if data:
             raise Exception(
@@ -143,13 +138,34 @@ class LicenseTest(object):
         Dump a representation of self to its YAML data file
         """
         as_yaml = saneyaml.dump(self.to_dict())
-        with io.open(self.data_file, 'wb') as df:
+        with io.open(self.data_file, 'w', encoding='utf-8') as df:
             df.write(as_yaml)
+
+    def get_content(self):
+        """
+        Return a byte strings of the test file content.
+        """
+        with open(self.test_file, 'rb') as df:
+            d = df.read()
+        return d
 
     def get_test_method_name(self, prefix='test_detection_'):
         test_file_name = self.test_file_name
         test_name = '{prefix}{test_file_name}'.format(**locals())
-        return text.python_safe_name(test_name)
+        test_name = text.python_safe_name(test_name)
+        if py2 and not isinstance(test_name, bytes):
+            test_name = test_name.encode('utf-8')
+        if py3 and not isinstance(test_name, compat.unicode):
+            test_name = test_name.decode('utf-8')
+        return test_name
+
+    @staticmethod
+    def load_from(test_dir):
+        """
+        Return an iterable of LicenseTest objects loaded from `test_dir`
+        """
+        return [LicenseTest(data_file, test_file)
+                 for data_file, test_file in get_test_file_pairs(test_dir)]
 
 
 def build_tests(test_dir, clazz, regen=False):
@@ -158,8 +174,7 @@ def build_tests(test_dir, clazz, regen=False):
     attach these method to the clazz license test class.
     """
 
-    license_tests = (LicenseTest(data_file, test_file)
-             for data_file, test_file in get_test_file_pairs(test_dir))
+    license_tests = LicenseTest.load_from(test_dir)
 
     # TODO: check that we do not have duplicated tests with same data and text
 
@@ -186,8 +201,6 @@ def make_test(license_test, regen=False):
     license_test LicenseTest object.
     """
     test_name = license_test.get_test_method_name()
-    if isinstance(test_name, unicode):
-        test_name = test_name.encode('utf-8')
 
     from licensedcode import cache
     from licensedcode.tracing import get_texts
@@ -213,40 +226,95 @@ def make_test(license_test, regen=False):
             license_test.dump()
             return
 
-        try:
-            assert expected_expressions == detected_expressions
-        except:
+        if expected_expressions != detected_expressions:
             # On failure, we compare against more result data to get additional
             # failure details, including the test_file and full match details
-            failure_trace = detected_expressions[:]
-            failure_trace .extend([test_name, 'test file: file://' + test_file])
-
+            results = expected_expressions + ['======================', '']
+            failure_trace = detected_expressions[:] + ['======================', '']
             for match in matches:
-                qtext, itext = get_texts(match, location=test_file, idx=idx)
+                qtext, itext = get_texts(match)
                 rule_text_file = match.rule.text_file
-                rule_data_file = match.rule.data_file
-                failure_trace.extend(['', '',
-                    '======= MATCH ====', match,
+                if match.rule.is_license:
+                    rule_data_file = rule_text_file.replace('LICENSE', 'yml')
+                else:
+                    rule_data_file = match.rule.data_file
+                failure_trace.extend(['',
+                    '======= MATCH ====', repr(match),
                     '======= Matched Query Text for:',
                     'file://{test_file}'.format(**locals())
                 ])
                 if test_data_file:
                     failure_trace.append('file://{test_data_file}'.format(**locals()))
 
-                failure_trace.append(qtext.splitlines())
+                failure_trace.append('')
+                failure_trace.append(qtext)
                 failure_trace.extend(['',
-                    '======= Matched Rule Text for:'
+                    '======= Matched Rule Text for:',
                     'file://{rule_text_file}'.format(**locals()),
                     'file://{rule_data_file}'.format(**locals()),
-                    itext.splitlines(),
+                    '',
+                    itext,
                 ])
+            if not matches:
+                failure_trace.extend(['',
+                    '======= NO MATCH ====',
+                    '======= Not Matched Query Text for:',
+                    'file://{test_file}'.format(**locals())
+                ])
+                if test_data_file:
+                    failure_trace.append('file://{test_data_file}'.format(**locals()))
+
             # this assert will always fail and provide a detailed failure trace
-            assert expected_expressions == failure_trace
+            assert '\n'.join(results) == '\n'.join(failure_trace)
 
     closure_test_function.__name__ = test_name
-    closure_test_function.funcname = test_name
 
     if expected_failure:
-        closure_test_function = unittest.expectedFailure(closure_test_function)
+        closure_test_function = pytest.mark.xfail(closure_test_function)
 
     return closure_test_function
+
+
+# a small test set of legalese to use in tests
+mini_legalese = frozenset([
+'accordance',
+'alternatively',
+'according',
+'acknowledgement',
+'enforcement',
+'admission',
+'alleged',
+'accused',
+'determines',
+'exceeding',
+'assessment',
+'exceeds',
+'literal',
+'existed',
+'ignored',
+'complementary',
+'responded',
+'observed',
+'assessments',
+'volunteer',
+'admitted',
+'ultimately',
+'choices',
+'complications',
+'allowance',
+'fragments',
+'plaintiff',
+'license',
+'agreement',
+'gnu',
+'general',
+'warranty',
+'distribute',
+'distribution',
+'licensed',
+'covered',
+'warranties',
+'damages',
+'liability',
+'means',
+])

@@ -3,18 +3,24 @@ license_expressions:
   - freetype
   - mit
   - x11
+  - x11
   - bsd-new AND free-unknown
   - bsd-new
-  - unknown
   - bsd-new
   - bsd-new
-  - unknown
+  - bsd-new
+  - bsd-new
   - naist-2003
+  - naist-2003
+  - bsd-simplified
   - bsd-simplified
   - bsd-new
   - public-domain
   - public-domain
   - sgi-freeb-2.0
+  - libpng
+  - libpng
+  - libpng
   - libpng
   - bsd-new
   - mit
@@ -26,4 +32,3 @@ license_expressions:
   - bsd-new
   - bsd-simplified
   - zlib
-

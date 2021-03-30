@@ -42,8 +42,8 @@ class TestIgnoreCopyrights(FileDrivenTesting):
         import re
         patterns = [re.compile('Berkeley'), re.compile('1993.*Californi')]
         test1 = 'The Regents of the University of California.'
-        test2 ='Copyright (c) 1993 The Regents of the University of California.'
-        test3 ='the University of California, Berkeley and its contributors.'
+        test2 = 'Copyright (c) 1993 The Regents of the University of California.'
+        test3 = 'the University of California, Berkeley and its contributors.'
 
         assert not is_ignored(patterns, [test1])
         assert is_ignored(patterns, [test1, test2, test3])

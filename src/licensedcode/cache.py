@@ -32,12 +32,13 @@ from os.path import getsize
 from os.path import join
 import sys
 
-from six import reraise
+import six
 import yg.lockfile  # NOQA
 
 from commoncode.fileutils import resource_iter
 from commoncode.fileutils import create_dir
 from commoncode import ignore
+from commoncode.system import py3
 
 from scancode_config import scancode_cache_dir
 from scancode_config import scancode_src_dir
@@ -185,7 +186,8 @@ def get_cached_index(cache_dir=scancode_cache_dir,
                      # used for testing only
                      timeout=LICENSE_INDEX_LOCK_TIMEOUT,
                      tree_base_dir=scancode_src_dir,
-                     licenses_data_dir=None, rules_data_dir=None,):
+                     licenses_data_dir=None, rules_data_dir=None,
+                     use_dumps=True):
     """
     Return a LicenseIndex: either load a cached index or build and cache the
     index.
@@ -223,7 +225,7 @@ def get_cached_index(cache_dir=scancode_cache_dir,
             if has_cache and has_tree_checksum:
                 # if we have a saved cached index
                 # load saved tree_checksum and compare with current tree_checksum
-                with open(checksum_file, 'rb') as etcs:
+                with open(checksum_file, 'r') as etcs:
                     existing_checksum = etcs.read()
                 current_checksum = tree_checksum(tree_base_dir=tree_base_dir)
                 if current_checksum == existing_checksum:
@@ -234,20 +236,26 @@ def get_cached_index(cache_dir=scancode_cache_dir,
             # Here, the cache is not consistent with the latest code and
             # data: It is either stale or non-existing: we need to
             # rebuild the index and cache it
+
+            # FIXME: caching a pickle of this would be 10x times faster
+            license_db = get_licenses_db(licenses_data_dir=licenses_data_dir)
+
             rules = get_rules(
                 licenses_data_dir=licenses_data_dir,
                 rules_data_dir=rules_data_dir)
 
-            license_db = get_licenses_db(licenses_data_dir=licenses_data_dir)
             spdx_tokens = set(get_all_spdx_key_tokens(license_db))
 
             idx = LicenseIndex(rules, _spdx_tokens=spdx_tokens)
 
             with open(cache_file, 'wb') as ifc:
-                ifc.write(idx.dumps())
+                if use_dumps:
+                    ifc.write(idx.dumps())
+                else:
+                    idx.dump(ifc)
 
             # save the new checksums tree
-            with open(checksum_file, 'wb') as ctcs:
+            with open(checksum_file, 'w') as ctcs:
                 ctcs.write(current_checksum
                            or tree_checksum(tree_base_dir=tree_base_dir))
 
@@ -258,7 +266,7 @@ def get_cached_index(cache_dir=scancode_cache_dir,
         raise
 
 
-def load_index(cache_file):
+def load_index(cache_file, use_loads=False):
     """
     Return a LicenseIndex loaded from cache.
     """
@@ -266,7 +274,10 @@ def load_index(cache_file):
     with open(cache_file, 'rb') as ifc:
         # Note: weird but read() + loads() is much (twice++???) faster than load()
         try:
-            return LicenseIndex.loads(ifc.read())
+            if use_loads:
+                return LicenseIndex.loads(ifc.read())
+            else:
+                return LicenseIndex.load(ifc)
         except:
             ex_type, ex_msg, ex_traceback = sys.exc_info()
             message = (str(ex_msg) +
@@ -274,7 +285,10 @@ def load_index(cache_file):
                 'Please delete "{cache_file}" and retry.\n'
                 'If the problem persists, copy this error message '
                 'and submit a bug report.\n'.format(**locals()))
-            reraise(ex_type, message, ex_traceback)
+            if py3:
+                raise ex_type(message).with_traceback(ex_traceback)
+            else:
+                six.reraise(ex_type, message, ex_traceback)
 
 
 _ignored_from_hash = partial(
@@ -299,7 +313,10 @@ def tree_checksum(tree_base_dir=scancode_src_dir, _ignored=_ignored_from_hash):
     """
     resources = resource_iter(tree_base_dir, ignored=_ignored, with_dirs=False)
     hashable = (pth + str(getmtime(pth)) + str(getsize(pth)) for pth in resources)
-    return md5(''.join(sorted(hashable))).hexdigest()
+    hashable = ''.join(sorted(hashable))
+    if py3:
+        hashable=hashable.encode('utf-8')
+    return md5(hashable).hexdigest()
 
 
 def get_license_cache_paths(cache_dir=scancode_cache_dir):

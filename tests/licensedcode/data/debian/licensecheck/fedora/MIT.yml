@@ -1,22 +1,19 @@
-expected_failure: yes
 license_expressions:
-  - mit-license-1998
   - mit-old-style
   - mit-old-style-no-advert
-  - mit-old-style-no-advert
-  - x11-keith-packard
+  - mit-old-style-no-advert AND warranty-disclaimer
   - isc
-  - historical
-  - mit-license-1998
+  - mit-old-style AND warranty-disclaimer
   - historical
   - postgresql
-  - mit
+  - postgresql
   - postgresql
   - cmu-uc
-  - historical
-  - historical
-  - historical
-  - x11-keith-packard
+  - standard-ml-nj
+  - standard-ml-nj
+  - standard-ml-nj
+  - wordnet
+  - wordnet
   - mit
   - unicode
   - mit-modern
@@ -25,8 +22,6 @@ license_expressions:
   - enna
   - boost-1.0
   - mpich
-  - mpich
-  - mpich
   - freetts
   - x11-keith-packard
   - mozilla-gc
@@ -34,20 +29,17 @@ license_expressions:
   - mit-xfig
   - x11-tiff
   - x11
-  - unknown
+  - x11 AND other-permissive
   - free-unknown
-  - historical
-  - boost-1.0
-  - free-unknown
+  - other-permissive
+  - other-permissive
   - mit
-  - mit
-  - unknown
-  - mpich
-  - zlib
-  - unknown
-  - gpl-1.0-plus
+  - other-permissive
+  - other-permissive
   - other-permissive
   - gpl-1.0-plus
+  - other-permissive
+  - unknown
+  - other-permissive
   - osf-1990
-  - mozilla-gc
-  - x11-keith-packard
+  - other-permissive

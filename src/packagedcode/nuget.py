@@ -27,19 +27,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import attr
+from six import string_types
 import xmltodict
 
 from packagedcode import models
 from packagedcode.utils import build_description
 
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
 
 # TODO: add dependencies
 
@@ -64,7 +57,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, (str, unicode)) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 
 @attr.s()
@@ -81,13 +74,13 @@ class NugetPackage(models.Package):
 
     @classmethod
     def recognize(cls, location):
-        return parse(location)
+        yield parse(location)
 
     @classmethod
     def get_package_root(cls, manifest_resource, codebase):
         if manifest_resource.name.endswith('.nupkg'):
             return manifest_resource
-        if manifest_resource.name.endswith(cls.metafiles):
+        if manifest_resource.name.endswith(('[Content_Types].xml', '.nuspec',)):
             return manifest_resource.parent(codebase)
         return manifest_resource
 
@@ -100,7 +93,7 @@ class NugetPackage(models.Package):
             name=self.name, version=self.version)
 
     def api_data_url(self, baseurl=default_api_baseurl):
-        # the name is lowercased 
+        # the name is lowercased
         # https://api.nuget.org/v3/registration3/newtonsoft.json/10.0.1.json
         return baseurl + '{name}/{version}.json'.format(
             name=self.name.lower(), version=self.version)
@@ -132,7 +125,7 @@ def _parse_nuspec(location):
     """
     if not location.endswith('.nuspec'):
         return
-    with open(location) as loc:
+    with open(location , 'rb') as loc:
         return  xmltodict.parse(loc)
 
 

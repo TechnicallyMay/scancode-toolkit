@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+
+import sys
+
 """
 This base config script gets automatically executed for all platforms via
 configure.
 """
-
-import sys
 
 """
 Check that we run a supported OS and architecture.
@@ -29,13 +31,16 @@ elif 'win32' in sys_platform:
     os = 'win'
 elif 'darwin' in sys_platform:
     os = 'mac'
+elif 'freebsd' in sys_platform:
+    os = 'freebsd'
 else:
     unsupported(sys_platform)
 
 supported_combos = {
     'linux': ['32', '64'],
-    'win': ['32', ],
+    'win': ['32', '64'],
     'mac': ['64', ],
+    'freebsd': ['32', '64'],
 }
 
 arches = supported_combos[os]

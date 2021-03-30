@@ -29,23 +29,16 @@ from __future__ import unicode_literals
 
 from collections import OrderedDict
 
+import saneyaml
+from six import string_types
 import unicodecsv
 
+from commoncode import compat
+from formattedcode import FileOptionType
 from plugincode.output import output_impl
 from plugincode.output import OutputPlugin
-from scancode import CommandLineOption
-from scancode import FileOptionType
-from scancode import OUTPUT_GROUP
-
-# Python 2 and 3 support
-try:
-    # Python 2
-    unicode
-    str = unicode  # NOQA
-except NameError:
-    # Python 3
-    unicode = str  # NOQA
-    basestring = str  # NOQA
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import OUTPUT_GROUP
 
 
 # Tracing flags
@@ -65,7 +58,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode)
+        return logger.debug(' '.join(isinstance(a, string_types)
                                      and a or repr(a) for a in args))
 
 
@@ -73,7 +66,7 @@ if TRACE:
 class CsvOutput(OutputPlugin):
 
     options = [
-        CommandLineOption(('--csv',),
+        PluggableCommandLineOption(('--csv',),
             type=FileOptionType(mode='wb', lazy=True),
             metavar='FILE',
             help='Write scan output as CSV to FILE.',
@@ -135,9 +128,8 @@ def flatten_scan(scan, headers):
     for scanned_file in scan:
         path = scanned_file.pop('path')
 
-        # alway use a root slash
-        if not path.startswith('/'):
-            path = '/' + path
+        # removing any slash at the begening of the path
+        path = path.lstrip('/')
 
         # use a trailing slash for directories
         if scanned_file.get('type') == 'directory' and not path.endswith('/'):
@@ -172,6 +164,8 @@ def flatten_scan(scan, headers):
                         if mrk in ('match_coverage', 'rule_relevance'):
                             # normalize the string representation of this number
                             mrv = '{:.2f}'.format(mrv)
+                        else:
+                            mrv = pretty(mrv)
                         mrk = 'matched_rule__' + mrk
                         lic[mrk] = mrv
                     continue
@@ -228,6 +222,25 @@ def flatten_scan(scan, headers):
             flat = flatten_package(package, path)
             collect_keys(flat, 'package')
             yield flat
+
+
+def pretty(data):
+    """
+    Return a unicode text pretty representation of data (as YAML or else) if
+    data is a sequence or mapping or the data as-is otherwise
+    """
+    if not data:
+        return None
+    seqtypes = list, tuple
+    maptypes = OrderedDict, dict
+    coltypes = seqtypes + maptypes
+    if isinstance(data, seqtypes):
+        if len(data) == 1 and isinstance(data[0], string_types):
+            return data[0].strip()
+    if isinstance(data, coltypes):
+        return saneyaml.dump(
+            data, indent=2, encoding='utf-8').decode('utf-8').strip()
+    return data
 
 
 def get_package_columns(_columns=set()):
@@ -307,7 +320,7 @@ def flatten_package(_package, path, prefix='package__'):
                     if isinstance(component_val, list):
                         component_val = '\n'.join(component_val)
 
-                    if not isinstance(component_val, str):
+                    if not isinstance(component_val, compat.unicode):
                         component_val = repr(component_val)
 
                     existing = pack.get(component_new_key) or []
@@ -325,11 +338,11 @@ def flatten_package(_package, path, prefix='package__'):
 
         pack[nk] = ''
 
-        if isinstance(val, basestring):
+        if isinstance(val, compat.unicode):
             pack[nk] = val
         else:
             # Use repr if not a string
             if val:
-                pack[nk] = repr(val)
+                pack[nk] = pretty(val)
 
     return pack

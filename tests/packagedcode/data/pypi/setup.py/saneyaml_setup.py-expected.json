@@ -3,18 +3,18 @@
   "namespace": null,
   "name": "saneyaml",
   "version": "0.2dev",
-  "qualifiers": null,
+  "qualifiers": {},
   "subpath": null,
   "primary_language": "Python",
-  "description": "Dump readable YAML and load safely any YAML preserving '        'ordering and avoiding surprises of type conversions. '        'This library is a PyYaml wrapper with sane behaviour to read and '        'write readable YAML safely, typically when used for configuration.",
+  "description": "Dump readable YAML and load safely any YAML preserving ordering and avoiding surprises of type conversions. This library is a PyYaml wrapper with sane behaviour to read and write readable YAML safely, typically when used for configuration.",
   "release_date": null,
   "parties": [
     {
       "type": "person",
       "role": "author",
       "name": "AboutCode authors and others.",
-      "email": null,
-      "url": null
+      "email": "info@nexb.com",
+      "url": "http://aboutcode.org"
     }
   ],
   "keywords": [
@@ -48,12 +48,13 @@
     ]
   },
   "notice_text": null,
-  "manifest_path": null,
+  "root_path": null,
   "dependencies": [],
   "contains_source_code": null,
   "source_packages": [],
+  "extra_data": {},
   "purl": "pkg:pypi/saneyaml@0.2dev",
-  "repository_homepage_url": null,
-  "repository_download_url": null,
-  "api_data_url": null
+  "repository_homepage_url": "https://pypi.org/project/saneyaml",
+  "repository_download_url": "https://pypi.io/packages/source/s/saneyaml/saneyaml-0.2dev.tar.gz",
+  "api_data_url": "http://pypi.python.org/pypi/saneyaml/0.2dev/json"
 }

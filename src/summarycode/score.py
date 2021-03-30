@@ -32,13 +32,15 @@ from itertools import chain
 
 import attr
 from license_expression import Licensing
+from six import string_types
 
 from commoncode.datautils import Mapping
 from licensedcode.cache import get_licenses_db
+from licensedcode import models
 from plugincode.post_scan import PostScanPlugin
 from plugincode.post_scan import post_scan_impl
-from scancode import CommandLineOption
-from scancode import POST_SCAN_GROUP
+from commoncode.cliutils import PluggableCommandLineOption
+from commoncode.cliutils import POST_SCAN_GROUP
 from summarycode import facet
 
 
@@ -59,7 +61,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 """
 A plugin to compute a licensing clarity score as designed in ClearlyDefined
@@ -70,11 +72,12 @@ A plugin to compute a licensing clarity score as designed in ClearlyDefined
 
 # MIN_GOOD_LICENSE_SCORE = 80
 
-@attr.s
+@attr.s(slots=True)
 class LicenseFilter(object):
     min_score = attr.ib(default=0)
     min_coverage = attr.ib(default=0)
     min_relevance = attr.ib(default=0)
+
 
 FILTERS = dict(
     is_license_text=LicenseFilter(min_score=70, min_coverage=80),
@@ -107,7 +110,7 @@ def is_good_license(detected_license):
     if not matched:
         return False
 
-    
+
     thresholds = FILTERS[match_type]
 
     # if the scan was not using --license-diag, we may not have these details
@@ -135,7 +138,7 @@ class LicenseClarityScore(PostScanPlugin):
     sort_order = 110
 
     options = [
-        CommandLineOption(('--license-clarity-score',),
+        PluggableCommandLineOption(('--license-clarity-score',),
             is_flag=True,
             default=False,
             help='Compute a summary license clarity score at the codebase level.',
@@ -171,7 +174,7 @@ def compute_license_score(codebase):
             scoring_elements[element.name] = bool(element_score)
             element_score = 1 if element_score else 0
         else:
-            scoring_elements[element.name] = round(element_score, 2)
+            scoring_elements[element.name] = round(element_score, 2) or 0
 
         score += int(element_score * element.weight)
         if TRACE:
@@ -179,7 +182,7 @@ def compute_license_score(codebase):
                 'compute_license_score: element:', element, 'element_score: ',
                 element_score, ' new score:', score)
 
-    scoring_elements['score'] = score
+    scoring_elements['score'] = score or 0
     return scoring_elements
 
 
@@ -300,12 +303,7 @@ def get_spdx_keys():
     """
     global _spdx_keys
     if not _spdx_keys:
-        licenses = get_licenses_db()
-        spdx = set()
-        for lic in licenses.values():
-            if (lic.spdx_license_key or lic.other_spdx_license_keys):
-                spdx.add(lic.key)
-        _spdx_keys = frozenset(spdx)
+        _spdx_keys = frozenset(models.get_all_spdx_keys(get_licenses_db()))
     return _spdx_keys
 
 
@@ -458,7 +456,8 @@ def get_file_level_license_and_copyright_coverage(codebase):
                      covered_files, 'files_count:', files_count)
 
     if files_count:
-        scoring_element = covered_files / files_count
+        # avoid floats for zero
+        scoring_element = (covered_files / files_count) or 0
 
         if TRACE:
             logger_debug('compute_license_score:scoring_element:', scoring_element)
@@ -567,10 +566,11 @@ full_text = ScoringElement(
     scorer=has_full_text_for_all_licenses,
     weight=15)
 
+
 # not used for now
-unkown = ScoringElement(
+unknown = ScoringElement(
     is_binary=True,
-    name='unkown',
+    name='unknown',
     scorer=has_unkown_licenses,
     weight=15)
 

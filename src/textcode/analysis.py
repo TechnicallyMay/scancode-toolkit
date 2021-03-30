@@ -26,6 +26,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from collections import OrderedDict
 import io
 import json
 import os
@@ -33,8 +34,11 @@ import re
 import unicodedata
 
 import chardet
+from six import string_types
 
+from commoncode import compat
 from commoncode.system import on_linux
+from commoncode.system import py2
 from textcode import pdf
 from textcode import markup
 from textcode import sfdb
@@ -65,7 +69,7 @@ if TRACE:
     logger.setLevel(logging.DEBUG)
 
     def logger_debug(*args):
-        return logger.debug(' '.join(isinstance(a, unicode) and a or repr(a) for a in args))
+        return logger.debug(' '.join(isinstance(a, string_types) and a or repr(a) for a in args))
 
 
 def numbered_text_lines(location, demarkup=False, plain_text=False):
@@ -88,13 +92,12 @@ def numbered_text_lines(location, demarkup=False, plain_text=False):
     if not location:
         return iter([])
 
-    if not isinstance(location, basestring):
+    if not isinstance(location, string_types):
         # not a path: wrap an iterator on location which should be a sequence
         # of lines
         if TRACE:
             logger_debug('numbered_text_lines:', 'location is not a file')
         return enumerate(iter(location), 1)
-
 
     if plain_text:
         if TRACE:
@@ -106,7 +109,9 @@ def numbered_text_lines(location, demarkup=False, plain_text=False):
     if TRACE:
         logger_debug('numbered_text_lines: T.filetype_file:', T.filetype_file)
         logger_debug('numbered_text_lines: T.is_text_with_long_lines:', T.is_text_with_long_lines)
+        logger_debug('numbered_text_lines: T.is_binary:', T.is_binary)
 
+    # TODO: we should have a command line to force digging inside binaries
     if not T.contains_text:
         return iter([])
 
@@ -145,8 +150,8 @@ def numbered_text_lines(location, demarkup=False, plain_text=False):
     if T.is_text:
         numbered_lines = enumerate(unicode_text_lines(location), 1)
         # text with very long lines such minified JS, JS map files or large JSON
-        locale = b'locale' if on_linux else u'locale'
-        package_json = b'package.json' if on_linux else u'package.json'
+        locale = b'locale' if on_linux and py2 else u'locale'
+        package_json = b'package.json' if on_linux and py2 else u'package.json'
 
         if (not location.endswith(package_json)
             and (T.is_text_with_long_lines or T.is_compact_js
@@ -205,7 +210,7 @@ def break_numbered_unicode_text_lines(numbered_lines, split=u'([",\'])', max_len
         if len(line) > max_len:
             # spli then reassemble in more reasonable chunks
             splitted = splitter(line)
-            chunks = (splitted[i:i + chunk_len] for i in xrange(0, len(splitted), chunk_len))
+            chunks = (splitted[i:i + chunk_len] for i in range(0, len(splitted), chunk_len))
             for chunk in chunks:
                 full_chunk = u''.join(chunk)
                 if full_chunk:
@@ -232,11 +237,11 @@ def js_map_sources_lines(location):
     We care only about the presence of these tags for detection: version, sources, sourcesContent.
     """
     with io.open(location, encoding='utf-8') as jsm:
-        content = json.load(jsm)
+        content = json.load(jsm, object_pairs_hook=OrderedDict)
         sources = content.get('sourcesContent', [])
         for entry in sources:
             for line in entry.splitlines():
-                yield line
+                yield line               
 
 
 def as_unicode(line):
@@ -248,8 +253,9 @@ def as_unicode(line):
 
     TODO: Add file/magic detection, unicodedmanit/BS3/4
     """
-    if isinstance(line, unicode):
-        return line
+    if isinstance(line, compat.unicode):
+        return remove_null_bytes(line)
+
     try:
         s = line.decode('UTF-8')
     except UnicodeDecodeError:
@@ -268,11 +274,22 @@ def as_unicode(line):
             except UnicodeDecodeError:
                 try:
                     enc = chardet.detect(line)['encoding']
-                    s = unicode(line, enc)
+                    s = compat.unicode(line, enc)
                 except UnicodeDecodeError:
                     # fall-back to strings extraction if all else fails
                     s = strings.string_from_string(s)
-    return s
+    return remove_null_bytes(s)
+
+
+def remove_null_bytes(s):
+    """
+    Return a string replacing by a space all null bytes.
+
+    There are some rare cases where we can have binary strings that are not
+    caught early when detecting a file type, but only late at the line level.
+    This help catch most of these cases.
+    """
+    return s.replace('\x00', ' ')
 
 
 def remove_verbatim_cr_lf_tab_chars(s):
@@ -291,9 +308,8 @@ def unicode_text_lines(location):
     contains text. Open the file as binary with universal new lines then try to
     decode each line as Unicode.
     """
-    # FIXME: the U mode is going to be deprecated
-    with open(location, 'rbU') as f:
-        for line in f:
+    with open(location, 'rb') as f:
+        for line in f.read().splitlines(True):
             yield remove_verbatim_cr_lf_tab_chars(as_unicode(line))
 
 
